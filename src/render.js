@@ -25,7 +25,7 @@ const C = {
   influenceEdge: 'rgba(255,196,64,0.95)',
 };
 const HIDDEN_ALPHA = 0.3;
-const PEEK = 1; // how much of the locked cells past the ring to show, in cells
+const PEEK = 0.6; // how much of the locked cells past the ring to show, in cells (a fifth of one)
 const MIN_CELL = 34; // smallest comfortable cell before the board pans instead
 
 const NUM_COLORS = [null, '#23a8dc', '#2dbd4e', '#e2353b', '#2a45c8', '#9c2b2a', '#1c9c95', '#2b2b2b', '#7b7b7b'];

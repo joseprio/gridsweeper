@@ -32,7 +32,7 @@ let dirty = true;
 const ui = { now: 0, hover: -1, pressed: -1, cursor: -1, showCursor: false, openAt: new Map() };
 
 // ---------- overlays ----------
-const overlays = { menu: $('ov-menu'), over: $('ov-over'), help: $('ov-help') };
+const overlays = { menu: $('ov-menu'), over: $('ov-over'), help: $('ov-help'), confirm: $('ov-confirm') };
 let overlayStack = [];
 
 function openOverlay(name) {
@@ -250,10 +250,29 @@ function retryLevel() {
   dirty = true;
 }
 
+// Has anything changed since the level started (the state a retry goes back to)?
+function levelTouched() {
+  const p = game.index;
+  return game.snapshot.some((snap, k) => snap.some((v, i) => v !== game.states[p + k][i]));
+}
+
+// Restarting throws away progress, so ask first, unless the level is already
+// lost or nothing has been done yet.
+function requestRetry() {
+  if (!game || anim) return;
+  if (game.status === 'lost' || !levelTouched()) {
+    retryLevel();
+    return;
+  }
+  $('confirm-text').textContent =
+    `Your progress on level ${game.index + 1} will be lost. The mines stay in the same places.`;
+  openOverlay('confirm');
+}
+
 function command(name) {
   switch (name) {
     case 'flagMode': setFlagMode(!flagMode); break;
-    case 'retry': retryLevel(); break;
+    case 'retry': if (!currentOverlay()) requestRetry(); break;
     case 'menu': currentOverlay() ? closeOverlay() : showMenu(); break;
     case 'help': openOverlay('help'); break;
     case 'center': if (game) placeCursor(game.index * 81 + game.start); break;
@@ -304,7 +323,7 @@ const pollGamepads = createGamepadPoller(keyHandlers);
 window.addEventListener('gamepadconnected', () => toast('Gamepad connected'));
 
 $('btn-flag').addEventListener('click', () => setFlagMode(!flagMode));
-$('btn-retry').addEventListener('click', retryLevel);
+$('btn-retry').addEventListener('click', requestRetry);
 $('btn-menu').addEventListener('click', showMenu);
 $('btn-help').addEventListener('click', () => openOverlay('help'));
 $('btn-sound').addEventListener('click', () => setSound(!sound.enabled));
@@ -321,6 +340,8 @@ $('menu-seed-form').addEventListener('submit', (e) => {
   closeAllOverlays();
 });
 $('over-retry').addEventListener('click', retryLevel);
+$('confirm-yes').addEventListener('click', retryLevel);
+$('confirm-no').addEventListener('click', closeOverlay);
 $('over-look').addEventListener('click', () => { closeAllOverlays(); toast('Press Retry to try this level again', 2400); });
 $('over-new').addEventListener('click', () => { startGame(randomSeed()); closeAllOverlays(); });
 $('help-close').addEventListener('click', closeOverlay);

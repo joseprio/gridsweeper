@@ -17,7 +17,7 @@
     <div class="stats">
       <div class="stat"><span class="label">Level</span><span class="value" id="hud-level">1</span></div>
       <div class="stat"><span class="label">Mines</span><span class="value" id="hud-mines">10</span></div>
-      <div class="stat"><span class="label">Time</span><span class="value" id="hud-time">0:00</span></div>
+      <div class="stat stat-time"><span class="label">Time</span><span class="value" id="hud-time">0:00</span></div>
       <button class="seed" id="hud-seed" type="button" title="Copy a link to this seed">
         <span class="label">Seed</span><span class="value" id="hud-seed-value">-</span>
       </button>
@@ -86,6 +86,18 @@
         <button type="button" class="btn primary" id="over-retry">Retry level</button>
         <button type="button" class="btn" id="over-look">Look at the board</button>
         <button type="button" class="btn" id="over-new">New random game</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Confirm restart -->
+  <section class="overlay" id="ov-confirm" hidden aria-labelledby="confirm-title">
+    <div class="panel">
+      <h2 id="confirm-title">Restart this level?</h2>
+      <p id="confirm-text"></p>
+      <div class="actions">
+        <button type="button" class="btn primary" id="confirm-no">Keep playing</button>
+        <button type="button" class="btn" id="confirm-yes">Restart level</button>
       </div>
     </div>
   </section>

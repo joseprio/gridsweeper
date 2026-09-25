@@ -263,8 +263,9 @@ p { line-height: 1.45; }
 .controls th, .controls td { padding: 6px 8px; border-bottom: 1px solid var(--panel-edge); text-align: left; vertical-align: top; }
 .controls thead th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
 
-/* Phones: the buttons wrap to a second row, spread across the width. */
-@media (max-width: 560px) {
+/* Portrait: stats and buttons in a bar across the top. On narrow phones the
+   buttons wrap to a second row, spread across the width. */
+@media (orientation: portrait) and (max-width: 560px) {
   #hud { gap: 6px; padding: 6px 8px; }
   .stats { flex: 1 1 100%; gap: 6px; }
   .stat, .seed { flex: 1 1 0; min-width: 0; padding: 2px 8px; min-height: 40px; }
@@ -273,14 +274,31 @@ p { line-height: 1.45; }
   #toolbar { flex: 1 1 100%; gap: 6px; }
   .tool { flex: 1 1 0; width: auto; height: 40px; }
 }
-/* Landscape phones: everything in a sidebar on the left. */
-@media (max-height: 500px) and (orientation: landscape) {
+
+/* Landscape (desktop windows, landscape phones and tablets): height is the
+   scarce dimension, so everything moves to a sidebar on the left. */
+@media (orientation: landscape) {
   body { flex-direction: row; }
-  #hud { flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; width: 172px; padding: 8px; }
-  .stats { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .stat, .seed { min-width: 0; min-height: 40px; padding: 2px 8px; }
-  .seed { grid-column: 1 / -1; }
+  #hud {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 10px;
+    width: 188px;
+    padding: 12px 10px;
+  }
+  .stats { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat, .seed { min-width: 0; }
+  .stat-time, .seed { grid-column: 1 / -1; }
+  #toolbar { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .tool { width: auto; }
+}
+/* Short landscape screens (phones): a tighter sidebar. */
+@media (orientation: landscape) and (max-height: 500px) {
+  #hud { width: 172px; padding: 8px; gap: 6px; }
+  .stats, #toolbar { gap: 6px; }
+  .stat, .seed { min-height: 40px; padding: 2px 8px; }
   .value { font-size: 16px; }
-  #toolbar { flex: none; flex-wrap: wrap; gap: 6px; }
-  .tool { flex: 1 1 42px; width: auto; height: 40px; }
+  .tool { height: 40px; }
 }
