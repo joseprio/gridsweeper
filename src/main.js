@@ -87,6 +87,8 @@ function toast(msg, ms = 1600) {
 function startGame(seed) {
   game = new Game(seed, { autoStart: false });
   anim = null;
+  zoomE = null;
+  renderer.pan = { x: 0, y: 0 };
   acted = false;
   ui.openAt.clear();
   animateOpen(game.beginPhase());
@@ -328,7 +330,12 @@ for (const el of Object.values(overlays)) {
   el.addEventListener('pointerdown', (e) => { if (e.target === el) command('back'); });
 }
 
-new ResizeObserver(() => { renderer.resize(); dirty = true; }).observe(canvas);
+// Resizing clears the canvas, and the observer runs after this frame's draw,
+// so redraw right away or the board is blank for as long as the resize lasts.
+new ResizeObserver(() => {
+  renderer.resize();
+  if (game) renderer.draw(game, currentView(), ui);
+}).observe(canvas);
 document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 window.addEventListener('pagehide', save);
 
@@ -336,6 +343,15 @@ window.addEventListener('pagehide', save);
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 let lastTime = performance.now();
 let shownTime = '';
+
+let zoomE = null; // zoom-out progress (0..1) while zooming, else null
+
+// What the camera shows: the level being played, or, while zooming out, the
+// next level growing into place.
+function currentView() {
+  if (zoomE === null) return { top: game.index, cell: renderer.cell, e: 0 };
+  return { top: game.index + 1, cell: renderer.cell * 3 ** (1 - zoomE), e: zoomE };
+}
 
 function frame() {
   // Same clock as animateOpen()/beginClear(); rAF's timestamp can lag behind it.
@@ -347,26 +363,24 @@ function frame() {
 
   if (game && acted && game.status === 'playing' && !currentOverlay() && !document.hidden) game.elapsed += dt;
 
-  let view = { top: game ? game.index : 0, cell: renderer.cell, e: 0 };
   if (anim?.phase === 'celebrate' && now - anim.t0 >= CELEBRATE_MS) {
     anim = { phase: 'zoom', t0: now, pan: { ...renderer.pan } };
     sound.zoom();
   }
   if (anim?.phase === 'zoom') {
     const t = Math.min(1, (now - anim.t0) / ZOOM_MS);
-    const e = easeInOut(t);
-    view = { top: game.index + 1, cell: renderer.cell * 3 ** (1 - e), e };
-    renderer.pan = { x: anim.pan.x * (1 - e), y: anim.pan.y * (1 - e) }; // drift back to centre
+    zoomE = easeInOut(t);
+    renderer.pan = { x: anim.pan.x * (1 - zoomE), y: anim.pan.y * (1 - zoomE) }; // drift back to centre
     if (t >= 1) {
+      zoomE = null;
       finishZoom();
-      view = { top: game.index, cell: renderer.cell, e: 0 };
     }
   }
 
   let opening = false;
   for (const t0 of ui.openAt.values()) if (now < t0 + 160) { opening = true; break; }
   if (game && (dirty || anim || opening || ui.showCursor)) {
-    renderer.draw(game, view, ui);
+    renderer.draw(game, currentView(), ui);
     dirty = false;
   }
   if (game) updateHud();
