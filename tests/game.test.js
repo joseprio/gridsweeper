@@ -91,7 +91,7 @@ test('blank areas uncover next-level locked cells, which still can\'t be clicked
   const locked = [...Array(CELLS).keys()].filter((i) => !isRing(i) && !isCore(1, i));
   assert.ok(locked.some((i) => g.stateOf(1, i) === OPEN), 'the opening should reach locked cells');
   // No opened blank cell is left next to a covered cell it could have opened.
-  for (const l of [0, 1]) {
+  for (const l of [0, 1, 2]) {
     for (let i = 0; i < CELLS; i++) {
       if (isCore(l, i) || g.stateOf(l, i) !== OPEN || g.count(l, i)) continue;
       for (const [dl, j] of neighbors(l, i)) {
@@ -102,8 +102,10 @@ test('blank areas uncover next-level locked cells, which still can\'t be clicked
   const coveredLocked = locked.find((i) => g.stateOf(1, i) === COVERED);
   assert.equal(g.primary(gid(1, coveredLocked)), null);
   assert.equal(g.toggleFlag(gid(1, coveredLocked)), null);
-  // Level after next is generated, so edge numbers on uncovered locked cells are real.
-  assert.ok(g.world.mines.length >= 3);
+  // Uncovering reaches two levels ahead, and one more level is generated so
+  // the numbers on uncovered cells there are real.
+  assert.ok(g.world.mines.length >= 4);
+  assert.ok(g.isReachable(2, 0) && !g.isReachable(3, 0));
 });
 
 function clearLevel(game) {
@@ -174,8 +176,13 @@ test('save and restore round-trips mid-game', () => {
   assert.equal(copy.minesLeft, game.minesLeft);
   assert.equal(copy.elapsed, 12345);
   assert.equal(Game.restore({ v: 1 }), null);
-  assert.equal(Game.restore({ ...game.serialize(), states: ['x'.repeat(81), '0'.repeat(81)] }), null);
-  const coreCovered = Game.restore({ ...game.serialize(), states: ['0'.repeat(81), '0'.repeat(81)] });
+  // Older saves that tracked two levels still load.
+  const v2 = { ...game.serialize(), v: 2 };
+  v2.states = v2.states.slice(0, 2);
+  v2.snapshot = v2.snapshot.slice(0, 2);
+  assert.equal(Game.restore(v2).index, 1);
+  assert.equal(Game.restore({ ...game.serialize(), states: ['x'.repeat(81), '0'.repeat(81), '0'.repeat(81)] }), null);
+  const coreCovered = Game.restore({ ...game.serialize(), states: ['0'.repeat(81), '0'.repeat(81), '0'.repeat(81)] });
   for (let i = 0; i < CELLS; i++) if (isCore(1, i)) assert.equal(coreCovered.stateOf(1, i), OPEN);
 });
 

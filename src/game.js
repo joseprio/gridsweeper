@@ -8,6 +8,11 @@ export const OPEN = 1;
 export const FLAG = 2;
 
 export const gid = (level, i) => level * CELLS + i;
+
+// Levels whose cells can change while level p is played: p itself, the next
+// level (its ring is playable) and the one after (locked cells there can be
+// uncovered by blank areas). They're what a retry resets and a save stores.
+const LIVE = 3;
 export const split = (g) => [Math.floor(g / CELLS), g % CELLS];
 
 function freshState(level) {
@@ -20,12 +25,12 @@ export class Game {
   constructor(seed, { autoStart = true } = {}) {
     this.seed = seed;
     this.world = new World(seed);
-    this.world.ensure(2); // the level after next decides the next level's edge numbers
+    this.world.ensure(LIVE); // one level past the last tracked one decides its edge numbers
     this.index = 0;
     this.status = 'playing'; // playing | cleared | lost
     this.elapsed = 0;
     this.exploded = -1;
-    this.states = [freshState(0), freshState(1)];
+    this.states = Array.from({ length: LIVE }, (_, l) => freshState(l));
     this.snapshot = null;
     if (autoStart) this.beginPhase();
   }
@@ -53,11 +58,14 @@ export class Game {
   }
 
   // Cells that opening an empty area (or chording) can uncover: the playable
-  // ones plus the locked cells of the next level. Locked cells can't be
-  // clicked, but a blank next to them proves they're safe.
+  // ones plus the locked cells of the next two levels (everything that's
+  // drawn). Locked cells can't be clicked, but a blank next to them proves
+  // they're safe.
   isReachable(level, i) {
-    return this.isPlayable(level, i) || (level === this.index + 1 && !isCore(level, i));
+    const p = this.index;
+    return this.isPlayable(level, i) || (level > p && level <= p + 2 && !isCore(level, i));
   }
+
 
   // Cells the player can see and act on (solved lower levels are visible too,
   // so their numbers can be used for chording).
@@ -90,14 +98,14 @@ export class Game {
   beginPhase() {
     const p = this.index;
     const opened = [];
-    for (const l of [p, p + 1]) {
+    for (let l = p; l < p + LIVE; l++) {
       for (let i = 0; i < CELLS; i++) {
-        if (this.states[l][i] !== OPEN || isCore(l, i) || !this.isVisible(l, i) || this.count(l, i)) continue;
+        if (this.states[l][i] !== OPEN || isCore(l, i) || this.count(l, i)) continue;
         for (const [dl, k] of neighbors(l, i)) opened.push(...this.flood(l + dl, k, 1));
       }
     }
     opened.push(...this.flood(p, this.start));
-    this.snapshot = [this.states[p].slice(), this.states[p + 1].slice()];
+    this.snapshot = this.states.slice(p, p + LIVE).map((st) => st.slice());
     return opened;
   }
 
@@ -165,13 +173,15 @@ export class Game {
     return true;
   }
 
-  // Makes sure the level after next has a state, and that the level after
-  // that is generated: its mines decide the numbers on the next level's edge.
+  // Before zooming out: makes sure the levels that will be tracked next have
+  // states, and that the level past them is generated (its mines decide the
+  // numbers on their outer edge).
   prepareNext() {
     const p = this.index;
-    this.world.ensure(p + 3);
-    if (!this.states[p + 2]) this.states[p + 2] = freshState(p + 2);
+    this.world.ensure(p + LIVE + 1);
+    for (let l = p; l <= p + LIVE; l++) if (!this.states[l]) this.states[l] = freshState(l);
   }
+
 
   enterNext() {
     this.prepareNext();
@@ -183,9 +193,8 @@ export class Game {
 
   retryLevel() {
     const p = this.index;
-    this.states[p] = this.snapshot[0].slice();
-    this.states[p + 1] = this.snapshot[1].slice();
-    this.states.length = p + 2;
+    this.snapshot.forEach((st, k) => { this.states[p + k] = st.slice(); });
+    this.states.length = p + LIVE;
     this.status = 'playing';
     this.exploded = -1;
     return [];
@@ -195,26 +204,28 @@ export class Game {
     const p = this.index;
     const str = (a) => Array.from(a).join('');
     return {
-      v: 2,
+      v: 3,
       seed: this.seed,
       index: p,
       status: this.status,
       elapsed: Math.round(this.elapsed),
       exploded: this.exploded,
-      states: [str(this.states[p]), str(this.states[p + 1])],
+      states: this.states.slice(p, p + LIVE).map(str),
       snapshot: this.snapshot.map(str),
     };
   }
 
   static restore(data) {
-    if (!data || data.v !== 2 || typeof data.seed !== 'string') return null;
+    if (!data || (data.v !== 2 && data.v !== 3) || typeof data.seed !== 'string') return null;
     const p = data.index | 0;
     const valid = (s) => typeof s === 'string' && s.length === CELLS && /^[012]+$/.test(s);
     if (p < 0 || p > 500 || ![...(data.states || []), ...(data.snapshot || [])].every(valid)) return null;
-    if (data.states.length !== 2 || data.snapshot.length !== 2) return null;
+    // v2 saves tracked two levels, v3 tracks three.
+    const n = data.v === 2 ? 2 : LIVE;
+    if (data.states.length !== n || data.snapshot.length !== n) return null;
 
     const game = new Game(data.seed, { autoStart: false });
-    game.world.ensure(p + 2);
+    game.world.ensure(p + LIVE);
     const parse = (str, level) => {
       const s = freshState(level);
       for (let i = 0; i < CELLS; i++) if (!isCore(level, i)) s[i] = Number(str[i]);
@@ -226,8 +237,9 @@ export class Game {
       for (let i = 0; i < CELLS; i++) if (!isCore(l, i)) s[i] = game.world.mine(l, i) ? FLAG : OPEN;
       game.states.push(s);
     }
-    game.states.push(parse(data.states[0], p), parse(data.states[1], p + 1));
-    game.snapshot = [parse(data.snapshot[0], p), parse(data.snapshot[1], p + 1)];
+    const tracked = (list) => Array.from({ length: LIVE }, (_, k) => (list[k] ? parse(list[k], p + k) : freshState(p + k)));
+    game.states.push(...tracked(data.states));
+    game.snapshot = tracked(data.snapshot);
     game.index = p;
     game.elapsed = data.elapsed || 0;
     game.status = data.status === 'lost' ? 'lost' : 'playing';
