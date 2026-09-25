@@ -9,11 +9,16 @@ const digitCache = [];
 const digitPath = (n) => (digitCache[n] ??= new Path2D(DIGIT_PATHS[n]));
 
 const C = {
-  bg: '#172030',
+  bg: '#283041', // navy, shows in the gaps between cells
   gridBg: '#101722',
-  tileMid: '#cdc2a9',
-  tileLight: '#f1eadb',
-  tileDark: '#857a66',
+  // Covered cells, after the title image: flat face and a mitred bevel lit
+  // warm from the top-left and reflecting blue on the bottom-right.
+  tileFace: '#b9ae9b',
+  tileTop: '#d6cfbd',
+  tileLeft: '#e0d4a6',
+  tileRight: '#3e6694',
+  tileBottom: '#6c849c',
+  tileOutline: 'rgba(8,10,14,0.85)',
   openMid: '#e9e3d4',
   openEdge: '#b6ad98',
   exploded: '#e2474b',
@@ -208,8 +213,8 @@ export class Renderer {
     // the extra row of locked cells beyond it stays visible.
     const r0 = 13.5 * cell;
     const g = ctx.createRadialGradient(cx, cy, r0, cx, cy, r0 + cell * 12);
-    g.addColorStop(0, 'rgba(23,32,48,0)');
-    g.addColorStop(1, 'rgba(23,32,48,0.6)');
+    g.addColorStop(0, 'rgba(40,48,65,0)');
+    g.addColorStop(1, 'rgba(40,48,65,0.6)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, this.w, this.h);
   }
@@ -236,8 +241,9 @@ export class Renderer {
     const span = cell * SIZE;
     if (x0 > this.w || y0 > this.h || x0 + span < 0 || y0 + span < 0) return;
 
-    if (cell < 2.5) {
-      // Too small for detail: a flat, averaged block.
+    if (cell < 0.5) {
+      // Sub-pixel cells (the whole level is a few pixels): a flat, averaged
+      // block. Anything bigger is drawn cell by cell, as tiny coloured squares.
       ctx.fillStyle = '#d8cfbc';
       ctx.fillRect(x0, y0, span, span);
       return;
@@ -300,7 +306,7 @@ export class Renderer {
       this.tileCovered(x, y, s);
       if (live && ui.hover === g) {
         ctx.fillStyle = 'rgba(255,255,255,0.18)';
-        rrect(ctx, x + s * 0.06, y + s * 0.06, s * 0.88, s * 0.88, s * 0.12);
+        rrect(ctx, x + s * 0.035, y + s * 0.035, s * 0.93, s * 0.93, s * 0.05);
         ctx.fill();
       }
     }
@@ -318,26 +324,46 @@ export class Renderer {
     return { x: (x0 + x1) / 2 - size / 2, y: (y0 + y1) / 2 - size / 2, s: size };
   }
 
+  // Covered cell: four bevel strips joined diagonally at the corners around a
+  // flat face, clipped to a slightly rounded square, with a thin dark outline.
   tileCovered(x, y, s) {
     const { ctx } = this;
-    const g = s * 0.05;
+    const g = s * 0.035;
     const w = s - g * 2;
+    const x0 = x + g, y0 = y + g, x1 = x0 + w, y1 = y0 + w;
     if (s < 7) {
-      ctx.fillStyle = C.tileMid;
-      ctx.fillRect(x + g, y + g, w, w);
+      ctx.fillStyle = C.tileFace;
+      ctx.fillRect(x0, y0, w, w);
       return;
     }
-    const r = s * 0.12, b = Math.max(1, s * 0.07);
-    ctx.fillStyle = C.tileDark;
-    rrect(ctx, x + g, y + g, w, w, r);
-    ctx.fill();
-    ctx.fillStyle = C.tileLight;
-    rrect(ctx, x + g, y + g, w - b, w - b, r);
-    ctx.fill();
-    ctx.fillStyle = C.tileMid;
-    rrect(ctx, x + g + b * 0.8, y + g + b * 0.8, w - b * 1.8, w - b * 1.8, r * 0.8);
-    ctx.fill();
+    const b = Math.max(1.5, w * 0.075), r = w * 0.05;
+    const ix0 = x0 + b, iy0 = y0 + b, ix1 = x1 - b, iy1 = y1 - b;
+    const strip = (color, ax, ay, bx, by, cx, cy, dx, dy) => {
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(dx, dy);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    };
+    ctx.save();
+    rrect(ctx, x0, y0, w, w, r);
+    ctx.clip();
+    strip(C.tileTop, x0, y0, x1, y0, ix1, iy0, ix0, iy0);
+    strip(C.tileLeft, x0, y0, ix0, iy0, ix0, iy1, x0, y1);
+    strip(C.tileRight, x1, y0, x1, y1, ix1, iy1, ix1, iy0);
+    strip(C.tileBottom, x0, y1, ix0, iy1, ix1, iy1, x1, y1);
+    ctx.fillStyle = C.tileFace;
+    ctx.fillRect(ix0, iy0, ix1 - ix0, iy1 - iy0);
+    ctx.restore();
+    ctx.strokeStyle = C.tileOutline;
+    ctx.lineWidth = Math.max(1, s * 0.018);
+    rrect(ctx, x0, y0, w, w, r);
+    ctx.stroke();
   }
+
 
   tileOpen(x, y, s, color = C.openMid) {
     const { ctx } = this;
