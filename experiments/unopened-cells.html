@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unopened cell options</title>
+  <style>
+    :root { --bg: #172030; --panel: #1f2a3d; --edge: #33425c; --ink: #f1eadb; --muted: #9aa6ba; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 1240px; margin: 0 auto; }
+    h1 { margin: 0 0 4px; font: 900 28px "Arial Black", "Segoe UI Black", sans-serif; letter-spacing: 0.02em; }
+    .lede { margin: 0 0 20px; color: var(--muted); max-width: 70ch; }
+    .ref { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 24px; padding: 14px; background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; }
+    .ref img { width: 300px; max-width: 100%; border-radius: 8px; }
+    .ref ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+    .ref code { color: var(--ink); }
+    .ref-title { margin: 0 0 8px; font-size: 16px; }
+    .section { margin: 0 0 12px; font-size: 18px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 16px; }
+    .card { padding: 14px; background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; }
+    .card h2 { margin: 0 0 2px; font-size: 17px; }
+    .card h2 span { display: inline-grid; place-items: center; width: 26px; height: 26px; margin-right: 8px; border-radius: 7px; background: #cdc2a9; color: #1d2330; font: 900 15px "Arial Black", sans-serif; }
+    .card p { margin: 0 0 10px; color: var(--muted); font-size: 13.5px; }
+    canvas { display: block; width: 100%; height: auto; border-radius: 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Unopened cell options</h1>
+  <p class="lede">Variations on the unopened (covered) cell, based on the title image. Each option is shown at the sizes the game uses: a big ring cell (148px), normal cells (49px) and tiny nested cells (16px), next to opened numbers and flags. Opened cells and flags are drawn the way the game draws them today; only the covered cell changes.</p>
+
+  <section class="ref">
+    <img src="reference-covered.png" alt="Covered cells cropped from the title image">
+    <div>
+    <h2 class="ref-title">Reference: unopened cells in the title image</h2>
+    <ul>
+      <li>Flat grey-beige face <code>#B9AE9B</code></li>
+      <li>Narrow mitred bevel: warm cream left <code>#E0D4A6</code>, light top <code>#D1CBBB</code></li>
+      <li>Blue right <code>#3E6694</code> and blue-grey bottom <code>#6C849C</code> (reflected surroundings)</li>
+      <li>Small corner radius, thin dark outline, navy gaps <code>#283041</code>, a white glint at the top-left corner</li>
+    </ul>
+    </div>
+  </section>
+
+  <h2 class="section">Options</h2>
+
+  <div class="grid" id="options"></div>
+</main>
+
+<script>
+// Self-contained so the page also works when opened straight from disk.
+// Digit shapes 1-3 copied from src/digits.js.
+const DIGIT_BOX = {"size":76,"cx":38,"cy":37.5,"height":57};
+const DIGIT_PATHS = [
+  null,
+  'M40.857,8.928 L18,26.071 L18,31.785 L32.286,31.785 L32.286,54.644 L18,54.644 L18,66.071 L58,66.071 L58,54.644 L46.571,54.644 L46.571,8.928 Z',
+  'M51.256,26.134v-4.545c0-1.545-1.293-2.796-2.892-2.796H27.393c-1.593,0-2.892,1.251-2.892,2.796v4.545 H8.593v-5.942C8.593,14.011,13.778,9,20.163,9h35.433c6.388,0,11.569,5.011,11.569,11.191c0,4.064,1.287,8.448-2.521,11.417 c-2.649,2.062-5.948,3.822-8.757,5.743c-6.993,4.777-14.083,9.431-21.093,14.188c-0.91,0.621-3.707,3.276-4.87,3.276 c0.012,0,37.602,0,37.602,0V66H8.774c0-4.529-1.605-9.863,2.609-13.253c2.949-2.372,6.773-4.315,9.932-6.502 c8-5.557,16.259-10.779,24.287-16.306C46.188,29.535,51.256,26.874,51.256,26.134z',
+  'M66.322,20.4c0-6.295-5.104-11.4-11.4-11.4H9.678v10.688H48.51c1.575,0,2.85,1.275,2.85,2.85v6.413 c0,1.569-1.274,2.85-2.85,2.85H26.778v12.825H48.51c1.575,0,2.85,1.274,2.85,2.85v6.413c0,1.569-1.274,2.85-2.85,2.85H9.678V66 h45.244c6.296,0,11.4-5.11,11.4-11.4V43.912c0-2.376-0.729-4.586-1.977-6.412c1.247-1.832,1.977-4.036,1.977-6.413V20.4z',
+];
+
+// ---------- shared drawing (opened cells, numbers, flags: as in the game) ----------
+const NUM = [null, '#23a8dc', '#2dbd4e', '#e2353b'];
+const shade = (hex, f) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgb(${Math.round(((n >> 16) & 255) * f)},${Math.round(((n >> 8) & 255) * f)},${Math.round((n & 255) * f)})`;
+};
+const rrect = (ctx, x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };
+
+function tileOpen(ctx, x, y, s) {
+  const g = s * 0.05, w = s - g * 2;
+  if (s < 7) { ctx.fillStyle = '#e9e3d4'; ctx.fillRect(x + g, y + g, w, w); return; }
+  const r = s * 0.1, b = Math.max(1, s * 0.05);
+  ctx.fillStyle = '#b6ad98'; rrect(ctx, x + g, y + g, w, w, r); ctx.fill();
+  ctx.fillStyle = '#e9e3d4'; rrect(ctx, x + g + b, y + g + b, w - b, w - b, r); ctx.fill();
+}
+
+const digitPaths = [];
+function number(ctx, x, y, s, n) {
+  if (s < 6) { ctx.fillStyle = NUM[n]; ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4); return; }
+  const path = (digitPaths[n] ??= new Path2D(DIGIT_PATHS[n]));
+  const k = (s * 0.62) / DIGIT_BOX.height, d = Math.max(1, s * 0.04);
+  for (const [off, color] of [[d, shade(NUM[n], 0.55)], [0, NUM[n]]]) {
+    ctx.save();
+    ctx.translate(x + s / 2 + off, y + s / 2 + off);
+    ctx.scale(k, k);
+    ctx.translate(-DIGIT_BOX.cx, -DIGIT_BOX.cy);
+    ctx.fillStyle = color;
+    ctx.fill(path);
+    ctx.restore();
+  }
+}
+
+function flag(ctx, x, y, s) {
+  if (s < 6) { ctx.fillStyle = '#ef3b3f'; ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4); return; }
+  const u = s / 100;
+  ctx.fillStyle = '#263042';
+  ctx.beginPath();
+  ctx.moveTo(x + 26 * u, y + 80 * u); ctx.lineTo(x + 74 * u, y + 80 * u);
+  ctx.lineTo(x + 68 * u, y + 70 * u); ctx.lineTo(x + 32 * u, y + 70 * u);
+  ctx.closePath(); ctx.fill();
+  ctx.fillRect(x + 46 * u, y + 24 * u, 7 * u, 48 * u);
+  ctx.fillStyle = '#ef3b3f';
+  ctx.beginPath(); ctx.moveTo(x + 53 * u, y + 20 * u); ctx.lineTo(x + 53 * u, y + 52 * u); ctx.lineTo(x + 24 * u, y + 38 * u); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath(); ctx.moveTo(x + 53 * u, y + 20 * u); ctx.lineTo(x + 53 * u, y + 32 * u); ctx.lineTo(x + 34 * u, y + 34 * u); ctx.closePath(); ctx.fill();
+}
+
+// ---------- covered-cell styles ----------
+
+// A: what the game draws today (offset rounded layers).
+function currentCovered(ctx, x, y, s) {
+  const g = s * 0.05, w = s - g * 2;
+  if (s < 7) { ctx.fillStyle = '#cdc2a9'; ctx.fillRect(x + g, y + g, w, w); return; }
+  const r = s * 0.12, b = Math.max(1, s * 0.07);
+  ctx.fillStyle = '#857a66'; rrect(ctx, x + g, y + g, w, w, r); ctx.fill();
+  ctx.fillStyle = '#f1eadb'; rrect(ctx, x + g, y + g, w - b, w - b, r); ctx.fill();
+  ctx.fillStyle = '#cdc2a9'; rrect(ctx, x + g + b * 0.8, y + g + b * 0.8, w - b * 1.8, w - b * 1.8, r * 0.8); ctx.fill();
+}
+
+// A colour, or a list of colours for a gradient along the given line.
+function paint(ctx, c, ax, ay, bx, by) {
+  if (typeof c === 'string') return c;
+  const g = ctx.createLinearGradient(ax, ay, bx, by);
+  c.forEach((col, k) => g.addColorStop(k / (c.length - 1), col));
+  return g;
+}
+
+// Mitred bevel: four trapezoids joined diagonally at the corners around a flat
+// face, clipped to a slightly rounded square, like the title image's cells.
+function mitred(o) {
+  return (ctx, x, y, s) => {
+    const g = s * o.gap, x0 = x + g, y0 = y + g, w = s - 2 * g, x1 = x0 + w, y1 = y0 + w;
+    const faceFlat = typeof o.face === 'string' ? o.face : o.face[0];
+    if (s < 7) { ctx.fillStyle = faceFlat; ctx.fillRect(x0, y0, w, w); return; }
+    const b = Math.max(1.5, w * o.bevel), r = w * o.radius;
+    const ix0 = x0 + b, iy0 = y0 + b, ix1 = x1 - b, iy1 = y1 - b;
+    const quad = (pts, fill) => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k][0], pts[k][1]);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+    };
+    ctx.save();
+    rrect(ctx, x0, y0, w, w, r);
+    ctx.clip();
+    quad([[x0, y0], [x1, y0], [ix1, iy0], [ix0, iy0]], paint(ctx, o.top, x0, y0, x1, y0));
+    quad([[x0, y0], [ix0, iy0], [ix0, iy1], [x0, y1]], paint(ctx, o.left, x0, y0, x0, y1));
+    quad([[x1, y0], [x1, y1], [ix1, iy1], [ix1, iy0]], paint(ctx, o.right, x1, y0, x1, y1));
+    quad([[x0, y1], [ix0, iy1], [ix1, iy1], [x1, y1]], paint(ctx, o.bottom, x0, y1, x1, y1));
+    ctx.fillStyle = paint(ctx, o.face, ix0, iy0, ix1, iy1);
+    ctx.fillRect(ix0, iy0, ix1 - ix0, iy1 - iy0);
+    if (o.glint && s >= 20) {
+      // Specular highlight where the two lit bevels meet.
+      const gl = ctx.createRadialGradient(x0 + b * 0.9, y0 + b * 0.9, 0, x0 + b * 0.9, y0 + b * 0.9, b * 2.2);
+      gl.addColorStop(0, 'rgba(255,255,255,0.9)');
+      gl.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = gl;
+      ctx.fillRect(x0, y0, b * 3.2, b * 3.2);
+    }
+    ctx.restore();
+    if (o.outline) {
+      ctx.strokeStyle = o.outline;
+      ctx.lineWidth = Math.max(1, s * 0.018);
+      rrect(ctx, x0, y0, w, w, r);
+      ctx.stroke();
+    }
+  };
+}
+
+const REF = {
+  top: ['#eee8d8', '#d6cfbd', '#b8c0c6'],
+  left: ['#efe5bd', '#e0d4a6', '#cfc392'],
+  right: ['#5d89bb', '#3e6694', '#2e4d72'],
+  bottom: ['#8aa0b5', '#6c849c', '#526a82'],
+};
+
+const OPTIONS = [
+  {
+    id: 'A', name: 'Current',
+    note: 'What the game draws today: rounded, soft offset layers, light top-left, dark bottom-right.',
+    bg: '#172030', covered: currentCovered,
+  },
+  {
+    id: 'B', name: 'Reference, flat',
+    note: 'The title image\'s look with flat colours: mitred bevel, cream left and top, blue right and bottom, grey-beige face, dark outline, navy gaps.',
+    bg: '#283041',
+    covered: mitred({ gap: 0.035, bevel: 0.075, radius: 0.05, face: '#b9ae9b', top: '#d6cfbd', left: '#e0d4a6', right: '#3e6694', bottom: '#6c849c', outline: 'rgba(8,10,14,0.85)' }),
+  },
+  {
+    id: 'C', name: 'Reference, glossy',
+    note: 'Closest to the image: like B, but each bevel has a gradient along it, the face has a faint diagonal gradient, and there\'s a white glint at the top-left corner.',
+    bg: '#283041',
+    covered: mitred({ gap: 0.035, bevel: 0.075, radius: 0.05, face: ['#c0b5a2', '#b4a995'], ...REF, outline: 'rgba(8,10,14,0.85)', glint: true }),
+  },
+  {
+    id: 'D', name: 'Reference, game-coloured face',
+    note: 'C\'s bevels and glint, but with the game\'s current lighter, warmer face colour, so it sits closer to the opened cells and the existing palette.',
+    bg: '#283041',
+    covered: mitred({ gap: 0.035, bevel: 0.075, radius: 0.05, face: ['#d3c8b0', '#c8bda4'], ...REF, top: ['#f4eee0', '#e2dbc8', '#c0c7cc'], left: ['#f3eac6', '#e8dcb0', '#d6ca9a'], outline: 'rgba(8,10,14,0.8)', glint: true }),
+  },
+  {
+    id: 'E', name: 'Reference, softer blue',
+    note: 'C with the blue toned down and greyed a little, for a calmer board where the blue edges don\'t compete with the blue 1s and 4s.',
+    bg: '#232c3c',
+    covered: mitred({ gap: 0.035, bevel: 0.075, radius: 0.05, face: ['#c0b5a2', '#b4a995'], top: REF.top, left: REF.left, right: ['#6f8aa8', '#56708f', '#445a74'], bottom: ['#96a3b0', '#7d8b99', '#66737f'], outline: 'rgba(8,10,14,0.8)', glint: true }),
+  },
+  {
+    id: 'F', name: 'Chunky keycap',
+    note: 'C\'s colours with a thicker bevel and rounder corners: more of a raised-key feel, still clearly lit from the top-left with blue on the bottom-right.',
+    bg: '#283041',
+    covered: mitred({ gap: 0.045, bevel: 0.12, radius: 0.09, face: ['#c0b5a2', '#b4a995'], ...REF, outline: 'rgba(8,10,14,0.85)', glint: true }),
+  },
+  {
+    id: 'G', name: 'Mitred, neutral light',
+    note: 'The mitred shape without the blue: light top and left, warm dark bottom and right, game face colour, on the current background. A classic raised tile in the game\'s palette.',
+    bg: '#172030',
+    covered: mitred({ gap: 0.04, bevel: 0.08, radius: 0.05, face: '#cdc2a9', top: ['#f7f1e3', '#ebe3cf'], left: ['#f0e8d3', '#e0d6bd'], right: ['#958a74', '#7b705c'], bottom: ['#8d826c', '#766b57'], outline: 'rgba(8,10,14,0.6)' }),
+  },
+];
+
+// ---------- sample board per option ----------
+// C = covered, F = flag, 1/2/3 = opened with that number, . = opened empty
+const BOARD = ['CCFC12', 'C12CCC', 'CCC3FC'];
+const TINY = ['CCCC..1CCCCF1..CCC', 'CC1F2.2CCCC21.1CCC', 'CCCC1.1CCCCCC1CCCC'];
+const W = 500, H = 240;
+
+function drawCell(ctx, opt, ch, x, y, s) {
+  if (ch === 'C') opt.covered(ctx, x, y, s);
+  else if (ch === 'F') { opt.covered(ctx, x, y, s); flag(ctx, x, y, s); }
+  else { tileOpen(ctx, x, y, s); if (ch !== '.') number(ctx, x, y, s, Number(ch)); }
+}
+
+function render(canvas, opt) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = opt.bg;
+  ctx.fillRect(0, 0, W, H);
+  // One big, ring-sized covered cell.
+  drawCell(ctx, opt, 'C', 12, 12, 148);
+  // Normal-sized cells.
+  BOARD.forEach((row, r) => [...row].forEach((ch, c) => drawCell(ctx, opt, ch, 180 + c * 49, 12 + r * 49, 49)));
+  // Tiny nested cells.
+  TINY.forEach((row, r) => [...row].forEach((ch, c) => drawCell(ctx, opt, ch, 12 + c * 16, 176 + r * 16, 16)));
+  // Label the sizes.
+  ctx.fillStyle = 'rgba(241,234,219,0.55)';
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.fillText('148px', 12, 172);
+  ctx.fillText('49px', 180, 172);
+  ctx.fillText('16px', 12 + 18 * 16 + 8, 188);
+}
+
+const grid = document.getElementById('options');
+for (const opt of OPTIONS) {
+  const card = document.createElement('article');
+  card.className = 'card';
+  card.innerHTML = `<h2><span>${opt.id}</span>${opt.name}</h2><p>${opt.note}</p>`;
+  const canvas = document.createElement('canvas');
+  canvas.setAttribute('aria-label', `Option ${opt.id}: ${opt.name}`);
+  card.appendChild(canvas);
+  grid.appendChild(card);
+  render(canvas, opt);
+}
+</script>
+</body>
+</html>
