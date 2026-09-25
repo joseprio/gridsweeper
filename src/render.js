@@ -157,6 +157,7 @@ export class Renderer {
   // ui: { now, hover, pressed, cursor, showCursor, openAt: Map }
   draw(game, view, ui) {
     const { ctx } = this;
+    this.zooming = !!view.zooming;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.globalAlpha = 1;
     ctx.fillStyle = C.bg;
@@ -165,7 +166,7 @@ export class Renderer {
     const outerCell = view.cell * 9;
     this.drawLevel(game, view.top + 2, this.cx - 4.5 * outerCell, this.cy - 4.5 * outerCell, outerCell, view, ui);
     this.shade(view);
-    if (view.e || game.status !== 'playing') return;
+    if (view.zooming || game.status !== 'playing') return;
 
     // The cell under the finger/pointer/cursor, and every neighbour of it that
     // could be hiding a mine (anything not opened, on any level).
@@ -218,11 +219,11 @@ export class Renderer {
   // and only redone when the view moves or zooms.
   shade(view) {
     const { cx, cy } = this;
-    const e = view.e;
-    const cp = e ? view.cell / 3 : view.cell; // cell size of the level being played
-    const key = `${this.w}x${this.h}|${cx.toFixed(1)},${cy.toFixed(1)}|${cp.toFixed(3)}|${e.toFixed(4)}`;
+    const e = view.zooming ? view.e : 0;
+    const cp = view.zooming ? view.cell / 3 : view.cell; // cell size of the level being left / played
+    const key = `${this.w}x${this.h}|${cx.toFixed(1)},${cy.toFixed(1)}|${cp.toFixed(3)}|${e.toFixed(4)}|${!!view.zooming}`;
     if (this.vig?.key !== key) {
-      const k = e ? 0.15 : 0.25; // coarser while zooming: it's recomputed every frame then
+      const k = view.zooming ? 0.15 : 0.25; // coarser while zooming: it's recomputed every frame then
       const W = Math.max(1, Math.ceil(this.w * k)), H = Math.max(1, Math.ceil(this.h * k));
       const img = this.vig?.img ?? document.createElement('canvas');
       img.width = W;
@@ -324,10 +325,14 @@ export class Renderer {
     const state = game.stateOf(level, i);
     const mine = game.world.mine(level, i);
     const lost = game.status === 'lost';
-    const live = game.status === 'playing' && game.isPlayable(level, i);
+    // While zooming out the game is already on the new level, but the view is
+    // still the old one's: judge visibility by the level being left.
+    const p = this.zooming ? game.index - 1 : game.index;
+    const visible = level >= 0 && level <= p + 1 && !isCore(level, i) && (level <= p || isRing(i));
+    const live = !this.zooming && game.status === 'playing' && game.isPlayable(level, i);
     // Keep numbers and flags readable on partly hidden cells the player can
     // use; locked cells just draw theirs in place, cut off if need be.
-    const b = game.isVisible(level, i) ? this.contentBox(x, y, s) : { x, y, s };
+    const b = visible ? this.contentBox(x, y, s) : { x, y, s };
 
     if (lost && g === game.exploded) {
       this.tileOpen(x, y, s, C.exploded);

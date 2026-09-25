@@ -113,8 +113,8 @@ function recordBest() {
   if (game.index + 1 > best) store.set(BEST_KEY, game.index + 1);
 }
 
-function animateOpen(opened) {
-  const now = performance.now();
+function animateOpen(opened, delay = 0) {
+  const now = performance.now() + delay;
   for (const { g, depth } of opened) ui.openAt.set(g, now + Math.min(depth, 12) * 22);
 }
 
@@ -148,15 +148,21 @@ function beginClear() {
   toast(`Level ${game.index + 1} cleared!`);
 }
 
-function finishZoom() {
-  anim = null;
+// The next level starts as the zoom-out begins, so its opening area (and any
+// blanks spreading into newly reachable cells) opens while the camera is still
+// moving, and is done by the time it stops.
+function startNextLevel() {
   ui.openAt.clear();
   const opened = game.enterNext();
-  animateOpen(opened);
+  animateOpen(opened, ZOOM_MS * 0.35);
   placeCursor(game.index * 81 + game.start);
   recordBest();
-  toast(`Level ${game.index + 1}`);
   save();
+}
+
+function finishZoom() {
+  anim = null;
+  toast(`Level ${game.index + 1}`);
 }
 
 function vibrate(pattern) {
@@ -420,8 +426,10 @@ let zoomE = null; // zoom-out progress (0..1) while zooming, else null
 // What the camera shows: the level being played, or, while zooming out, the
 // next level growing into place.
 function currentView() {
-  if (zoomE === null) return { top: game.index, cell: renderer.cell, e: 0 };
-  return { top: game.index + 1, cell: renderer.cell * 3 ** (1 - zoomE), e: zoomE };
+  if (zoomE === null) return { top: game.index, cell: renderer.cell, e: 0, zooming: false };
+  // Mid-zoom the game is already on the new level; its cells shrink from 3x
+  // down to normal size as the previous level settles into the core.
+  return { top: game.index, cell: renderer.cell * 3 ** (1 - zoomE), e: zoomE, zooming: true };
 }
 
 function frame() {
@@ -432,11 +440,13 @@ function frame() {
   ui.now = now;
   pollGamepads(now);
 
-  if (game && acted && game.status === 'playing' && !currentOverlay() && !document.hidden) game.elapsed += dt;
+  if (game && acted && game.status === 'playing' && !anim && !currentOverlay() && !document.hidden) game.elapsed += dt;
 
   if (anim?.phase === 'celebrate' && now - anim.t0 >= CELEBRATE_MS) {
     anim = { phase: 'zoom', t0: now, pan: { ...renderer.pan } };
+    zoomE = 0;
     sound.zoom();
+    startNextLevel();
   }
   if (anim?.phase === 'zoom') {
     const t = Math.min(1, (now - anim.t0) / ZOOM_MS);
