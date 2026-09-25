@@ -52,6 +52,14 @@ export class Renderer {
     this.h = 0;
     this.cell = 32;
     this.pan = { x: 0, y: 0 };
+    this.insets = { left: 0, top: 0, right: 0, bottom: 0 };
+    this.area = { x: 0, y: 0, w: 0, h: 0 };
+  }
+
+  // Parts of the canvas covered by other UI (the translucent toolbar). The
+  // board is sized and centred in the rest, but still drawn underneath.
+  setInsets(insets) {
+    this.insets = insets;
   }
 
   resize() {
@@ -61,24 +69,27 @@ export class Renderer {
     this.h = rect.height;
     this.canvas.width = Math.max(1, Math.round(rect.width * this.dpr));
     this.canvas.height = Math.max(1, Math.round(rect.height * this.dpr));
+    const { left, top, right, bottom } = this.insets;
+    this.area = { x: left, y: top, w: Math.max(1, this.w - left - right), h: Math.max(1, this.h - top - bottom) };
+    const { w, h } = this.area;
     // Fit the grid, the whole ring of next-level cells (3 cells deep) and a
     // peek of the locked cells beyond it on every side; the longer side shows
     // more. If that makes cells too small to tap, keep them bigger and let the
     // board be panned instead.
-    const full = Math.min(this.w, this.h) / (SIZE + 6 + 2 * PEEK);
-    const partial = Math.min(this.w / (SIZE + 2), this.h / (SIZE + 2), 48);
+    const full = Math.min(w, h) / (SIZE + 6 + 2 * PEEK);
+    const partial = Math.min(w / (SIZE + 2), h / (SIZE + 2), 48);
     this.cell = full >= MIN_CELL ? full : Math.max(full, partial);
     this.panBy(0, 0);
   }
 
   // Board centre on screen.
-  get cx() { return this.w / 2 + this.pan.x; }
-  get cy() { return this.h / 2 + this.pan.y; }
+  get cx() { return this.area.x + this.area.w / 2 + this.pan.x; }
+  get cy() { return this.area.y + this.area.h / 2 + this.pan.y; }
 
   // Moves the board, clamped so it can't scroll past the locked-cell peek.
   panBy(dx, dy) {
     const extent = (4.5 + 3 + PEEK) * this.cell;
-    const mx = Math.max(0, extent - this.w / 2), my = Math.max(0, extent - this.h / 2);
+    const mx = Math.max(0, extent - this.area.w / 2), my = Math.max(0, extent - this.area.h / 2);
     const x = Math.max(-mx, Math.min(mx, this.pan.x + dx));
     const y = Math.max(-my, Math.min(my, this.pan.y + dy));
     const moved = x !== this.pan.x || y !== this.pan.y;
@@ -89,9 +100,11 @@ export class Renderer {
   // Pans just enough to bring a cell fully into view (keyboard/gamepad cursor).
   reveal(g, game, margin = 8) {
     const { x, y, size } = this.cellRect(g, game);
-    const w = Math.min(size, this.w - 2 * margin), h = Math.min(size, this.h - 2 * margin);
-    const dx = x < margin ? margin - x : x + w > this.w - margin ? this.w - margin - (x + w) : 0;
-    const dy = y < margin ? margin - y : y + h > this.h - margin ? this.h - margin - (y + h) : 0;
+    const A = this.area;
+    const left = A.x + margin, right = A.x + A.w - margin, top = A.y + margin, bottom = A.y + A.h - margin;
+    const w = Math.min(size, right - left), h = Math.min(size, bottom - top);
+    const dx = x < left ? left - x : x + w > right ? right - (x + w) : 0;
+    const dy = y < top ? top - y : y + h > bottom ? bottom - (y + h) : 0;
     return this.panBy(dx, dy);
   }
 
@@ -141,8 +154,8 @@ export class Renderer {
     ctx.fillStyle = C.bg;
     ctx.fillRect(0, 0, this.w, this.h);
 
-    const outerCell = view.cell * 3;
-    this.drawLevel(game, view.top + 1, this.cx - 4.5 * outerCell, this.cy - 4.5 * outerCell, outerCell, view, ui);
+    const outerCell = view.cell * 9;
+    this.drawLevel(game, view.top + 2, this.cx - 4.5 * outerCell, this.cy - 4.5 * outerCell, outerCell, view, ui);
     this.vignette(this.cx, this.cy, view.cell);
     if (view.e || game.status !== 'playing') return;
 
@@ -191,22 +204,31 @@ export class Renderer {
 
   vignette(cx, cy, cell) {
     const { ctx } = this;
-    const g = ctx.createRadialGradient(cx, cy, cell * 9, cx, cy, cell * 16);
+    // Start fading at the edge of the next level's grid, and only partly, so
+    // the extra row of locked cells beyond it stays visible.
+    const r0 = 13.5 * cell;
+    const g = ctx.createRadialGradient(cx, cy, r0, cx, cy, r0 + cell * 12);
     g.addColorStop(0, 'rgba(23,32,48,0)');
-    g.addColorStop(1, 'rgba(23,32,48,0.9)');
+    g.addColorStop(1, 'rgba(23,32,48,0.6)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, this.w, this.h);
   }
 
-  // Everything up to the ring is fully shown; the hidden cells of the next
-  // level are dim, and fade in while zooming out.
+  // Everything up to the ring is fully shown. Everything further out is
+  // locked and dim, including the level after next, which gives an extra row
+  // of locked cells past the next level's edge (under the toolbar, and on wide
+  // screens). While zooming out, the cells becoming playable fade in.
   alpha(game, level, i, e) {
     const p = game.index;
+    const fadeIn = HIDDEN_ALPHA + (1 - HIDDEN_ALPHA) * e;
     if (level <= p) return 1;
-    if (level === p + 1) return isRing(i) ? 1 : HIDDEN_ALPHA + (1 - HIDDEN_ALPHA) * e;
-    if (level === p + 2) return isRing(i) ? e : HIDDEN_ALPHA * e;
-    return 0;
+    if (level === p + 1) return isRing(i) ? 1 : fadeIn;
+    if (level === p + 2) return isRing(i) ? fadeIn : HIDDEN_ALPHA;
+    return HIDDEN_ALPHA;
   }
+
+
+
 
   drawLevel(game, level, x0, y0, cell, view, ui) {
     if (level < 0) return;
@@ -285,11 +307,13 @@ export class Renderer {
   }
 
   // Where to draw a cell's number or flag: the cell itself or, for a big ring
-  // cell partly off screen, the part of it that is visible.
+  // cell partly off screen or under the toolbar, the part of it that is visible.
   contentBox(x, y, s) {
-    const x0 = Math.max(x, 0), x1 = Math.min(x + s, this.w);
-    const y0 = Math.max(y, 0), y1 = Math.min(y + s, this.h);
+    const A = this.area;
+    const x0 = Math.max(x, A.x), x1 = Math.min(x + s, A.x + A.w);
+    const y0 = Math.max(y, A.y), y1 = Math.min(y + s, A.y + A.h);
     if (x1 - x0 >= s - 0.5 && y1 - y0 >= s - 0.5) return { x, y, s };
+    if (x1 <= x0 || y1 <= y0) return { x, y, s }; // entirely under the toolbar
     const size = Math.max(4, Math.min(s, (x1 - x0) * 1.15, (y1 - y0) * 1.15));
     return { x: (x0 + x1) / 2 - size / 2, y: (y0 + y1) / 2 - size / 2, s: size };
   }

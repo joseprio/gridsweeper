@@ -2,6 +2,7 @@
   --bg: #172030;
   --panel: #1f2a3d;
   --panel-edge: #33425c;
+  --glass-bar: rgba(16, 23, 34, 0.15);
   --ink: #f1eadb;
   --muted: #9aa6ba;
   --tile: #cdc2a9;
@@ -41,7 +42,10 @@ body {
 button { font: inherit; color: inherit; }
 
 /* ---------- HUD: stats on the left, buttons on the right ---------- */
+/* Floats over the full-window board; the cells behind it show through, blurred. */
 #hud {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -49,6 +53,10 @@ button { font: inherit; color: inherit; }
   gap: 8px;
   padding: 8px 12px;
   flex: none;
+  background: var(--glass-bar);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: blur(6px) saturate(1.2);
+  backdrop-filter: blur(6px) saturate(1.2);
 }
 
 .stats {
@@ -100,10 +108,11 @@ button { font: inherit; color: inherit; }
 }
 
 /* ---------- Board ---------- */
+/* The board fills the whole window, behind the toolbar. */
 #stage {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
 }
 
 #board {
@@ -116,10 +125,11 @@ button { font: inherit; color: inherit; }
   cursor: pointer;
 }
 
+/* Centred in the part of the board not covered by the toolbar. */
 #toast {
   position: absolute;
-  left: 50%;
-  top: 12px;
+  left: calc(var(--inset-left, 0px) + (100% - var(--inset-left, 0px) - var(--inset-right, 0px)) / 2);
+  top: calc(var(--inset-top, 0px) + 12px);
   transform: translate(-50%, -8px);
   padding: 8px 18px;
   border-radius: 999px;
@@ -165,6 +175,9 @@ button { font: inherit; color: inherit; }
 }
 #btn-flag[aria-pressed="true"] svg { color: #fff; }
 #btn-sound[aria-pressed="false"] .waves { opacity: 0.15; }
+.tool[hidden] { display: none; }
+#btn-fullscreen .fs-exit, #btn-fullscreen[aria-pressed="true"] .fs-enter { display: none; }
+#btn-fullscreen[aria-pressed="true"] .fs-exit { display: inline; }
 
 /* ---------- Overlays ---------- */
 .overlay {
@@ -280,6 +293,8 @@ p { line-height: 1.45; }
 @media (orientation: landscape) {
   body { flex-direction: row; }
   #hud {
+    border-bottom: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
     flex-direction: column;
     flex-wrap: nowrap;
     align-items: stretch;

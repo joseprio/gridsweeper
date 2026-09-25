@@ -269,6 +269,29 @@ function requestRetry() {
   openOverlay('confirm');
 }
 
+// Full screen (with the webkit prefix older Safari needs). Browsers that can't
+// put a page in full screen, like iPhone Safari, don't get the button.
+const fullscreenSupported = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+
+function toggleFullscreen() {
+  const root = document.documentElement;
+  try {
+    const result = isFullscreen()
+      ? (document.exitFullscreen || document.webkitExitFullscreen).call(document)
+      : (root.requestFullscreen || root.webkitRequestFullscreen).call(root, { navigationUI: 'hide' });
+    result?.catch?.(() => toast("Full screen isn't available here"));
+  } catch {
+    toast("Full screen isn't available here");
+  }
+}
+
+function syncFullscreenButton() {
+  const on = isFullscreen();
+  $('btn-fullscreen').setAttribute('aria-pressed', String(on));
+  $('btn-fullscreen').title = on ? 'Exit full screen' : 'Full screen';
+}
+
 function command(name) {
   switch (name) {
     case 'flagMode': setFlagMode(!flagMode); break;
@@ -327,6 +350,10 @@ $('btn-retry').addEventListener('click', requestRetry);
 $('btn-menu').addEventListener('click', showMenu);
 $('btn-help').addEventListener('click', () => openOverlay('help'));
 $('btn-sound').addEventListener('click', () => setSound(!sound.enabled));
+$('btn-fullscreen').hidden = !fullscreenSupported;
+$('btn-fullscreen').addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', syncFullscreenButton);
+document.addEventListener('webkitfullscreenchange', syncFullscreenButton);
 $('hud-seed').addEventListener('click', copySeedLink);
 
 $('menu-continue').addEventListener('click', () => { sound.unlock(); closeAllOverlays(); });
@@ -353,10 +380,33 @@ for (const el of Object.values(overlays)) {
 
 // Resizing clears the canvas, and the observer runs after this frame's draw,
 // so redraw right away or the board is blank for as long as the resize lasts.
-new ResizeObserver(() => {
+// The canvas fills the window and the toolbar floats over it (translucent),
+// so tell the renderer which part it covers: the top (portrait) or the left
+// (landscape sidebar), plus any safe-area padding on the other edges.
+function measureInsets() {
+  const hud = $('hud').getBoundingClientRect();
+  const cs = getComputedStyle(document.body);
+  const pad = (side) => parseFloat(cs[`padding${side}`]) || 0;
+  const sidebar = hud.height > hud.width;
+  const insets = {
+    left: sidebar ? hud.right : pad('Left'),
+    top: sidebar ? pad('Top') : hud.bottom,
+    right: pad('Right'),
+    bottom: pad('Bottom'),
+  };
+  renderer.setInsets(insets);
+  document.documentElement.style.setProperty('--inset-left', `${insets.left}px`);
+  document.documentElement.style.setProperty('--inset-top', `${insets.top}px`);
+  document.documentElement.style.setProperty('--inset-right', `${insets.right}px`);
+}
+
+const layoutObserver = new ResizeObserver(() => {
+  measureInsets();
   renderer.resize();
   if (game) renderer.draw(game, currentView(), ui);
-}).observe(canvas);
+});
+layoutObserver.observe(canvas);
+layoutObserver.observe($('hud'));
 document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 window.addEventListener('pagehide', save);
 
@@ -429,6 +479,7 @@ function updateHud() {
 function boot() {
   const prefs = store.get(PREFS_KEY);
   setSound(prefs?.sound !== false);
+  measureInsets();
   renderer.resize();
 
   const urlSeed = normalizeSeed(new URL(location.href).searchParams.get('seed'));
