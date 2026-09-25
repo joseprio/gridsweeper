@@ -3,6 +3,10 @@
 // shrunk into the core.
 import { SIZE, CELLS, CORE_LO, isCore, isRing, neighbors } from './level.js';
 import { OPEN, FLAG, gid, split } from './game.js';
+import { DIGIT_BOX, DIGIT_PATHS } from './digits.js';
+
+const digitCache = [];
+const digitPath = (n) => (digitCache[n] ??= new Path2D(DIGIT_PATHS[n]));
 
 const C = {
   bg: '#172030',
@@ -38,8 +42,6 @@ function rrect(ctx, x, y, w, h, r) {
   if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
   else ctx.rect(x, y, w, h);
 }
-
-export const FONT_STACK = '"Arial Black", "Segoe UI Black", "Helvetica Neue", Arial, system-ui, sans-serif';
 
 export class Renderer {
   constructor(canvas) {
@@ -339,15 +341,20 @@ export class Renderer {
       ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4);
       return;
     }
-    ctx.font = `900 ${Math.round(s * 0.62)}px ${FONT_STACK}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const cx = x + s / 2, cy = y + s / 2 + s * 0.03;
+    // Digit shapes from ref/, scaled so the glyph is ~62% of the cell tall,
+    // with a darker copy offset down-right for the raised look.
+    const k = (s * 0.62) / DIGIT_BOX.height;
     const d = Math.max(1, s * 0.04);
-    ctx.fillStyle = NUM_SHADOWS[n];
-    ctx.fillText(String(n), cx + d, cy + d);
-    ctx.fillStyle = NUM_COLORS[n];
-    ctx.fillText(String(n), cx, cy);
+    const path = digitPath(n);
+    for (const [off, color] of [[d, NUM_SHADOWS[n]], [0, NUM_COLORS[n]]]) {
+      ctx.save();
+      ctx.translate(x + s / 2 + off, y + s / 2 + off);
+      ctx.scale(k, k);
+      ctx.translate(-DIGIT_BOX.cx, -DIGIT_BOX.cy);
+      ctx.fillStyle = color;
+      ctx.fill(path);
+      ctx.restore();
+    }
   }
 
   flag(x, y, s) {
