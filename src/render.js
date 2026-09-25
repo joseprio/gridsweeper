@@ -29,7 +29,7 @@ const C = {
   influence: 'rgba(255,196,64,0.32)',
   influenceEdge: 'rgba(255,196,64,0.95)',
 };
-const HIDDEN_ALPHA = 0.3;
+const LOCKED_SHADE = 0.7; // how much locked cells are darkened (towards the background)
 const PEEK = 0.6; // how much of the locked cells past the ring to show, in cells (a fifth of one)
 const MIN_CELL = 34; // smallest comfortable cell before the board pans instead
 
@@ -56,6 +56,8 @@ export class Renderer {
     this.w = 0;
     this.h = 0;
     this.cell = 32;
+    this.sprites = new Map(); // tile images per kind and pixel size, see sprite()
+    this.vig = null; // cached darkening of locked cells and screen edges, see shade()
     this.pan = { x: 0, y: 0 };
     this.insets = { left: 0, top: 0, right: 0, bottom: 0 };
     this.area = { x: 0, y: 0, w: 0, h: 0 };
@@ -74,6 +76,7 @@ export class Renderer {
     this.h = rect.height;
     this.canvas.width = Math.max(1, Math.round(rect.width * this.dpr));
     this.canvas.height = Math.max(1, Math.round(rect.height * this.dpr));
+    this.sprites.clear(); // the pixel ratio may have changed
     const { left, top, right, bottom } = this.insets;
     this.area = { x: left, y: top, w: Math.max(1, this.w - left - right), h: Math.max(1, this.h - top - bottom) };
     const { w, h } = this.area;
@@ -161,7 +164,7 @@ export class Renderer {
 
     const outerCell = view.cell * 9;
     this.drawLevel(game, view.top + 2, this.cx - 4.5 * outerCell, this.cy - 4.5 * outerCell, outerCell, view, ui);
-    this.vignette(this.cx, this.cy, view.cell);
+    this.shade(view);
     if (view.e || game.status !== 'playing') return;
 
     // The cell under the finger/pointer/cursor, and every neighbour of it that
@@ -207,30 +210,53 @@ export class Renderer {
     ctx.restore();
   }
 
-  vignette(cx, cy, cell) {
-    const { ctx } = this;
-    // Start fading at the edge of the next level's grid, and only partly, so
-    // the extra row of locked cells beyond it stays visible.
-    const r0 = 13.5 * cell;
-    const g = ctx.createRadialGradient(cx, cy, r0, cx, cy, r0 + cell * 12);
-    g.addColorStop(0, 'rgba(40,48,65,0)');
-    g.addColorStop(1, 'rgba(40,48,65,0.6)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, this.w, this.h);
+  // Darkens what isn't playable. Locked cells get darker with a soft gradient
+  // where they meet the playable area (the grid plus the ring around it), and
+  // everything fades gently towards the screen edges. While zooming out, the
+  // next playable area brightens as it comes into play. It's all smooth, so
+  // it's rendered at quarter resolution into a cached image and stretched,
+  // and only redone when the view moves or zooms.
+  shade(view) {
+    const { cx, cy } = this;
+    const e = view.e;
+    const cp = e ? view.cell / 3 : view.cell; // cell size of the level being played
+    const key = `${this.w}x${this.h}|${cx.toFixed(1)},${cy.toFixed(1)}|${cp.toFixed(3)}|${e.toFixed(4)}`;
+    if (this.vig?.key !== key) {
+      const k = e ? 0.15 : 0.25; // coarser while zooming: it's recomputed every frame then
+      const W = Math.max(1, Math.ceil(this.w * k)), H = Math.max(1, Math.ceil(this.h * k));
+      const img = this.vig?.img ?? document.createElement('canvas');
+      img.width = W;
+      img.height = H;
+      const v = img.getContext('2d');
+      const data = v.createImageData(W, H);
+      const px = data.data;
+      // Playable area now (half-size h0) and after the zoom (h1), with the
+      // width of the gradient at each edge (half a locked cell).
+      const h0 = 7.5 * cp, f0 = 1.5 * cp, h1 = 22.5 * cp, f1 = 4.5 * cp;
+      const r0 = 13.5 * view.cell, rw = 12 * view.cell; // edge fade
+      const ramp = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+      const outside = (ax, ay, h) => Math.hypot(Math.max(ax - h, 0), Math.max(ay - h, 0));
+      for (let y = 0; y < H; y++) {
+        const dy = (y + 0.5) / k - cy, ay = Math.abs(dy);
+        for (let x = 0; x < W; x++) {
+          const dx = (x + 0.5) / k - cx, ax = Math.abs(dx);
+          const locked = LOCKED_SHADE * Math.max(ramp(outside(ax, ay, h0) / f0) * (1 - e), ramp(outside(ax, ay, h1) / f1));
+          const edge = 0.6 * Math.min(1, Math.max(0, (Math.hypot(dx, dy) - r0) / rw));
+          const i = (y * W + x) * 4;
+          px[i] = 40;
+          px[i + 1] = 48;
+          px[i + 2] = 65;
+          px[i + 3] = Math.round(255 * (1 - (1 - locked) * (1 - edge)));
+        }
+      }
+      v.putImageData(data, 0, 0);
+      this.vig = { key, img };
+    }
+    this.ctx.drawImage(this.vig.img, 0, 0, this.w, this.h);
   }
 
-  // Everything up to the ring is fully shown. Everything further out is
-  // locked and dim, including the level after next, which gives an extra row
-  // of locked cells past the next level's edge (under the toolbar, and on wide
-  // screens). While zooming out, the cells becoming playable fade in.
-  alpha(game, level, i, e) {
-    const p = game.index;
-    const fadeIn = HIDDEN_ALPHA + (1 - HIDDEN_ALPHA) * e;
-    if (level <= p) return 1;
-    if (level === p + 1) return isRing(i) ? 1 : fadeIn;
-    if (level === p + 2) return isRing(i) ? fadeIn : HIDDEN_ALPHA;
-    return HIDDEN_ALPHA;
-  }
+
+
 
 
 
@@ -253,12 +279,8 @@ export class Renderer {
       if (isCore(level, i)) continue;
       const x = x0 + (i % SIZE) * cell, y = y0 + Math.floor(i / SIZE) * cell;
       if (x > this.w || y > this.h || x + cell < 0 || y + cell < 0) continue;
-      const a = this.alpha(game, level, i, view.e);
-      if (a <= 0.01) continue;
-      ctx.globalAlpha = a;
       this.drawCell(game, level, i, x, y, cell, ui);
     }
-    ctx.globalAlpha = 1;
 
     if (level > 0) {
       const cx = x0 + CORE_LO * cell, cy = y0 + CORE_LO * cell;
@@ -266,6 +288,34 @@ export class Renderer {
       ctx.fillRect(cx + cell * 0.04, cy + cell * 0.04, cell * 3 - cell * 0.08, cell * 3 - cell * 0.08);
       this.drawLevel(game, level - 1, cx, cy, cell / 3, view, ui);
     }
+  }
+
+  // Draws a tile through a cache of pre-rendered images, one per kind and
+  // pixel size. The bevels, digit paths and clipping are drawn once per size
+  // instead of for every cell on every frame, which keeps animations smooth.
+  sprite(key, x, y, s, paint) {
+    if (s < 7) {
+      // Tiny tiles are a single rectangle anyway.
+      this.ctx.save();
+      this.ctx.translate(x, y);
+      paint();
+      this.ctx.restore();
+      return;
+    }
+    const px = Math.max(1, Math.round(s * this.dpr));
+    const id = `${key}|${px}`;
+    let img = this.sprites.get(id);
+    if (!img) {
+      if (this.sprites.size > 300) this.sprites.clear(); // sizes churn while zooming
+      img = document.createElement('canvas');
+      img.width = img.height = px;
+      const main = this.ctx;
+      this.ctx = img.getContext('2d');
+      this.ctx.scale(px / s, px / s);
+      try { paint(); } finally { this.ctx = main; }
+      this.sprites.set(id, img);
+    }
+    this.ctx.drawImage(img, x, y, s, s);
   }
 
   drawCell(game, level, i, x, y, s, ui) {
@@ -281,13 +331,18 @@ export class Renderer {
       this.tileOpen(x, y, s, C.exploded);
       this.mine(b.x, b.y, b.s);
     } else if (state === FLAG) {
-      this.tileCovered(x, y, s);
-      this.flag(b.x, b.y, b.s);
+      if (b.s === s) this.sprite('flag', x, y, s, () => { this.tileCovered(0, 0, s); this.flag(0, 0, s); });
+      else { this.tileCovered(x, y, s); this.flag(b.x, b.y, b.s); }
       if (lost && !mine) this.cross(b.x, b.y, b.s);
     } else if (state === OPEN) {
       const t0 = ui.openAt.get(g);
       const k = t0 === undefined ? 1 : Math.min(1, Math.max(0, (ui.now - t0) / 140));
-      this.tileOpen(x, y, s);
+      const n = game.count(level, i);
+      if (k >= 1 && b.s === s) {
+        this.sprite(`open${n}`, x, y, s, () => { this.tileOpen(0, 0, s); this.number(0, 0, s, n); });
+        return;
+      }
+      this.sprite('open0', x, y, s, () => this.tileOpen(0, 0, s));
       if (k < 1) {
         const a = ctx.globalAlpha;
         ctx.globalAlpha = a * (1 - k);
@@ -295,7 +350,7 @@ export class Renderer {
         this.tileCovered(x + inset, y + inset, s - inset * 2);
         ctx.globalAlpha = a;
       } else {
-        this.number(b.x, b.y, b.s, game.count(level, i));
+        this.number(b.x, b.y, b.s, n);
       }
     } else if (lost && mine && game.isPlayable(level, i)) {
       this.tileOpen(x, y, s);
@@ -303,7 +358,7 @@ export class Renderer {
     } else if (live && ui.pressed === g) {
       this.tileOpen(x, y, s);
     } else {
-      this.tileCovered(x, y, s);
+      this.sprite('covered', x, y, s, () => this.tileCovered(0, 0, s));
       if (live && ui.hover === g) {
         ctx.fillStyle = 'rgba(255,255,255,0.18)';
         rrect(ctx, x + s * 0.035, y + s * 0.035, s * 0.93, s * 0.93, s * 0.05);
