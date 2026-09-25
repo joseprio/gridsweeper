@@ -325,7 +325,9 @@ export class Renderer {
     const mine = game.world.mine(level, i);
     const lost = game.status === 'lost';
     const live = game.status === 'playing' && game.isPlayable(level, i);
-    const b = this.contentBox(x, y, s);
+    // Keep numbers and flags readable on partly hidden cells the player can
+    // use; locked cells just draw theirs in place, cut off if need be.
+    const b = game.isVisible(level, i) ? this.contentBox(x, y, s) : { x, y, s };
 
     if (lost && g === game.exploded) {
       this.tileOpen(x, y, s, C.exploded);
