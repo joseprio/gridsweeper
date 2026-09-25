@@ -1,0 +1,12 @@
+{
+  "name": "gridsweeper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An endless, zooming-out minesweeper where every cleared grid becomes the centre of a bigger one.",
+  "type": "module",
+  "scripts": {
+    "start": "node serve.js",
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
