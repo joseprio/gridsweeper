@@ -20,7 +20,7 @@ export class Game {
   constructor(seed, { autoStart = true } = {}) {
     this.seed = seed;
     this.world = new World(seed);
-    this.world.ensure(1);
+    this.world.ensure(2); // the level after next decides the next level's edge numbers
     this.index = 0;
     this.status = 'playing'; // playing | cleared | lost
     this.elapsed = 0;
@@ -52,6 +52,13 @@ export class Game {
     return false;
   }
 
+  // Cells that opening an empty area (or chording) can uncover: the playable
+  // ones plus the locked cells of the next level. Locked cells can't be
+  // clicked, but a blank next to them proves they're safe.
+  isReachable(level, i) {
+    return this.isPlayable(level, i) || (level === this.index + 1 && !isCore(level, i));
+  }
+
   // Cells the player can see and act on (solved lower levels are visible too,
   // so their numbers can be used for chording).
   isVisible(level, i) {
@@ -68,7 +75,7 @@ export class Game {
     const queue = [[level, i, depth0]];
     while (queue.length) {
       const [l, j, depth] = queue.shift();
-      if (!this.isPlayable(l, j) || this.states[l][j] !== COVERED || this.world.mine(l, j)) continue;
+      if (!this.isReachable(l, j) || this.states[l][j] !== COVERED || this.world.mine(l, j)) continue;
       this.states[l][j] = OPEN;
       out.push({ g: gid(l, j), depth });
       if (this.count(l, j) === 0) {
@@ -119,7 +126,7 @@ export class Game {
     for (const [dl, k] of neighbors(l, i)) {
       const s = this.stateOf(l + dl, k);
       if (s === FLAG) flags++;
-      else if (s === COVERED && this.isPlayable(l + dl, k)) covered.push([l + dl, k]);
+      else if (s === COVERED && this.isReachable(l + dl, k)) covered.push([l + dl, k]);
     }
     if (flags !== count || !covered.length) return null;
     const hit = covered.find(([cl, ck]) => this.world.mine(cl, ck));
@@ -158,10 +165,11 @@ export class Game {
     return true;
   }
 
-  // Makes sure the level after next exists (needed for the next level's numbers).
+  // Makes sure the level after next has a state, and that the level after
+  // that is generated: its mines decide the numbers on the next level's edge.
   prepareNext() {
     const p = this.index;
-    this.world.ensure(p + 2);
+    this.world.ensure(p + 3);
     if (!this.states[p + 2]) this.states[p + 2] = freshState(p + 2);
   }
 
@@ -206,7 +214,7 @@ export class Game {
     if (data.states.length !== 2 || data.snapshot.length !== 2) return null;
 
     const game = new Game(data.seed, { autoStart: false });
-    game.world.ensure(p + 1);
+    game.world.ensure(p + 2);
     const parse = (str, level) => {
       const s = freshState(level);
       for (let i = 0; i < CELLS; i++) if (!isCore(level, i)) s[i] = Number(str[i]);

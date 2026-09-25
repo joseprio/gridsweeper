@@ -86,6 +86,26 @@ test('ring cells are playable, hidden next-level cells are not', () => {
   assert.equal(g.primary(gid(1, hidden)), null);
 });
 
+test('blank areas uncover next-level locked cells, which still can\'t be clicked', () => {
+  const g = new Game('G83F3G');
+  const locked = [...Array(CELLS).keys()].filter((i) => !isRing(i) && !isCore(1, i));
+  assert.ok(locked.some((i) => g.stateOf(1, i) === OPEN), 'the opening should reach locked cells');
+  // No opened blank cell is left next to a covered cell it could have opened.
+  for (const l of [0, 1]) {
+    for (let i = 0; i < CELLS; i++) {
+      if (isCore(l, i) || g.stateOf(l, i) !== OPEN || g.count(l, i)) continue;
+      for (const [dl, j] of neighbors(l, i)) {
+        if (g.isReachable(l + dl, j)) assert.notEqual(g.stateOf(l + dl, j), COVERED);
+      }
+    }
+  }
+  const coveredLocked = locked.find((i) => g.stateOf(1, i) === COVERED);
+  assert.equal(g.primary(gid(1, coveredLocked)), null);
+  assert.equal(g.toggleFlag(gid(1, coveredLocked)), null);
+  // Level after next is generated, so edge numbers on uncovered locked cells are real.
+  assert.ok(g.world.mines.length >= 3);
+});
+
 function clearLevel(game) {
   const p = game.index;
   for (let i = 0; i < CELLS; i++) {
