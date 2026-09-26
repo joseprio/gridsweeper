@@ -10,6 +10,7 @@ const BEST_KEY = 'gridsweeper.best';
 const PREFS_KEY = 'gridsweeper.prefs';
 const CELEBRATE_MS = 700;
 const ZOOM_MS = 1300;
+const LOOK_MS = 450; // one zoom step while looking over a lost game
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('board');
@@ -89,6 +90,7 @@ function startGame(seed) {
   anim = null;
   zoomE = null;
   renderer.pan = { x: 0, y: 0 };
+  resetLook();
   acted = false;
   ui.openAt.clear();
   animateOpen(game.beginPhase());
@@ -248,6 +250,7 @@ function setSound(on) {
 function retryLevel() {
   if (!game || anim) return;
   closeAllOverlays();
+  resetLook();
   ui.openAt.clear();
   animateOpen(game.retryLevel());
   placeCursor(game.index * 81 + game.start);
@@ -305,6 +308,8 @@ function command(name) {
     case 'menu': currentOverlay() ? closeOverlay() : showMenu(); break;
     case 'help': openOverlay('help'); break;
     case 'center': if (game) placeCursor(game.index * 81 + game.start); break;
+    case 'zoomIn': zoomLook(1); break;
+    case 'zoomOut': zoomLook(-1); break;
     case 'back':
       if (overlayStack.at(-1) === 'menu' && (!game || game.status === 'lost')) return;
       closeOverlay();
@@ -375,7 +380,12 @@ $('menu-seed-form').addEventListener('submit', (e) => {
 $('over-retry').addEventListener('click', retryLevel);
 $('confirm-yes').addEventListener('click', retryLevel);
 $('confirm-no').addEventListener('click', closeOverlay);
-$('over-look').addEventListener('click', () => { closeAllOverlays(); toast('Press Retry to try this level again', 2400); });
+$('over-look').addEventListener('click', () => {
+  closeAllOverlays();
+  toast(game.index > 0 ? 'Zoom in to see earlier levels' : 'Press Retry to try this level again', 2400);
+});
+$('zoom-in').addEventListener('click', () => zoomLook(1));
+$('zoom-out').addEventListener('click', () => zoomLook(-1));
 $('over-new').addEventListener('click', () => { startGame(randomSeed()); closeAllOverlays(); });
 $('help-close').addEventListener('click', closeOverlay);
 
@@ -423,10 +433,57 @@ let shownTime = '';
 
 let zoomE = null; // zoom-out progress (0..1) while zooming, else null
 
+// Looking over a lost game: the +/- buttons zoom in by whole levels (x3 each),
+// down to level 1 filling the view. `z` eases towards `target`.
+const look = { z: 0, target: 0, from: 0, t0: 0 };
+const canLook = () => !!game && game.status === 'lost' && !anim && !currentOverlay();
+
+function zoomLook(dir) {
+  if (!canLook()) return;
+  const target = Math.max(0, Math.min(game.index, look.target + dir));
+  if (target === look.target) return;
+  Object.assign(look, { target, from: look.z, t0: performance.now() });
+  if (target > 0) toast(`Level ${game.index + 1 - target}`, 1100);
+  dirty = true;
+}
+
+function resetLook() {
+  const k = 3 ** -look.z;
+  Object.assign(look, { z: 0, target: 0, from: 0 });
+  renderer.zoom = 1;
+  renderer.pan = { x: renderer.pan.x * k, y: renderer.pan.y * k };
+  renderer.panBy(0, 0);
+}
+
+// Moves the zoom one frame along; the pan scales with it, so the zoom
+// centres on the middle of the screen.
+function stepLook(now) {
+  if (look.z === look.target) return;
+  const t = Math.min(1, (now - look.t0) / LOOK_MS);
+  const z = t >= 1 ? look.target : look.from + (look.target - look.from) * easeInOut(t);
+  const k = 3 ** (z - look.z);
+  look.z = z;
+  renderer.zoom = 3 ** z;
+  renderer.pan = { x: renderer.pan.x * k, y: renderer.pan.y * k };
+  renderer.panBy(0, 0);
+  dirty = true;
+}
+
+let shownZoom = '';
+function updateZoomButtons() {
+  const on = canLook() && game.index > 0;
+  const key = on ? `${look.target}|${game.index}` : '';
+  if (key === shownZoom) return;
+  shownZoom = key;
+  $('zoom').hidden = !on;
+  $('zoom-in').disabled = look.target >= game.index;
+  $('zoom-out').disabled = look.target <= 0;
+}
+
 // What the camera shows: the level being played, or, while zooming out, the
 // next level growing into place.
 function currentView() {
-  if (zoomE === null) return { top: game.index, cell: renderer.cell, e: 0, zooming: false };
+  if (zoomE === null) return { top: game.index, cell: renderer.cell * renderer.zoom, e: 0, zooming: false };
   // Mid-zoom the game is already on the new level; its cells shrink from 3x
   // down to normal size as the previous level settles into the core.
   return { top: game.index, cell: renderer.cell * 3 ** (1 - zoomE), e: zoomE, zooming: true };
@@ -458,13 +515,15 @@ function frame() {
     }
   }
 
+  stepLook(now);
+
   let opening = false;
   for (const t0 of ui.openAt.values()) if (now < t0 + 160) { opening = true; break; }
   if (game && (dirty || anim || opening || ui.showCursor)) {
     renderer.draw(game, currentView(), ui);
     dirty = false;
   }
-  if (game) updateHud();
+  if (game) { updateHud(); updateZoomButtons(); }
   requestAnimationFrame(frame);
 }
 

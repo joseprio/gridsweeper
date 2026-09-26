@@ -143,6 +143,8 @@ export function setupKeyboard(h) {
       case 'KeyM': if (!e.repeat) h.command('flagMode'); break;
       case 'KeyR': if (!e.repeat) h.command('retry'); break;
       case 'KeyC': h.usedKeys(); h.command('center'); break;
+      case 'Equal': case 'NumpadAdd': h.command('zoomIn'); break;
+      case 'Minus': case 'NumpadSubtract': h.command('zoomOut'); break;
       case 'Escape': case 'KeyN': e.preventDefault(); h.command('menu'); break;
       case 'F1': case 'Slash': case 'KeyH': e.preventDefault(); h.command('help'); break;
     }

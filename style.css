@@ -145,6 +145,19 @@ button { font: inherit; color: inherit; }
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* Zoom buttons for looking over a lost game, bottom-right of the board. */
+#zoom {
+  position: absolute;
+  right: calc(var(--inset-right, 0px) + 16px);
+  bottom: calc(env(safe-area-inset-bottom) + 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#zoom[hidden] { display: none; }
+#zoom .tool { width: 48px; height: 48px; }
+#zoom .tool:disabled { opacity: 0.4; cursor: default; }
+
 /* ---------- Toolbar ---------- */
 #toolbar {
   display: flex;

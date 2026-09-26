@@ -59,6 +59,7 @@ export class Renderer {
     this.sprites = new Map(); // tile images per kind and pixel size, see sprite()
     this.vig = null; // cached darkening of locked cells and screen edges, see shade()
     this.pan = { x: 0, y: 0 };
+    this.zoom = 1; // extra magnification while looking over a lost game
     this.insets = { left: 0, top: 0, right: 0, bottom: 0 };
     this.area = { x: 0, y: 0, w: 0, h: 0 };
   }
@@ -96,7 +97,7 @@ export class Renderer {
 
   // Moves the board, clamped so it can't scroll past the locked-cell peek.
   panBy(dx, dy) {
-    const extent = (4.5 + 3 + PEEK) * this.cell;
+    const extent = (4.5 + 3 + PEEK) * this.cell * this.zoom;
     const mx = Math.max(0, extent - this.area.w / 2), my = Math.max(0, extent - this.area.h / 2);
     const x = Math.max(-mx, Math.min(mx, this.pan.x + dx));
     const y = Math.max(-my, Math.min(my, this.pan.y + dy));
@@ -285,8 +286,12 @@ export class Renderer {
 
     if (level > 0) {
       const cx = x0 + CORE_LO * cell, cy = y0 + CORE_LO * cell;
+      // Zoomed in, outer levels' cores can be far bigger than the screen, so
+      // only fill the part of the backing that is on it.
+      const bx0 = Math.max(-1, cx + cell * 0.04), by0 = Math.max(-1, cy + cell * 0.04);
+      const bx1 = Math.min(this.w + 1, cx + cell * 2.96), by1 = Math.min(this.h + 1, cy + cell * 2.96);
       ctx.fillStyle = C.gridBg;
-      ctx.fillRect(cx + cell * 0.04, cy + cell * 0.04, cell * 3 - cell * 0.08, cell * 3 - cell * 0.08);
+      if (bx1 > bx0 && by1 > by0) ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
       this.drawLevel(game, level - 1, cx, cy, cell / 3, view, ui);
     }
   }
@@ -295,8 +300,9 @@ export class Renderer {
   // pixel size. The bevels, digit paths and clipping are drawn once per size
   // instead of for every cell on every frame, which keeps animations smooth.
   sprite(key, x, y, s, paint) {
-    if (s < 7) {
-      // Tiny tiles are a single rectangle anyway.
+    if (s < 7 || s * this.dpr > 1024) {
+      // Tiny tiles are a single rectangle anyway, and huge ones (zoomed in)
+      // would need an image bigger than the screen.
       this.ctx.save();
       this.ctx.translate(x, y);
       paint();
