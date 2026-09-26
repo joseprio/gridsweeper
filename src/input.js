@@ -4,7 +4,7 @@
 // h (handlers): {
 //   hit(x, y) -> cell id or -1, canPlay() -> bool, overlay() -> open overlay element or null,
 //   tap(g), long(g), flag(g), chord(g), hover(g), pressed(g), pan(dx, dy),
-//   zoom(dir, x, y),
+//   zoom(dir),
 //   move(dr, dc), cursorPrimary(), cursorFlag(), usedPointer(), usedKeys(),
 //   command(name)  // 'retry' | 'menu' | 'help' | 'flagMode' | 'back' | 'center' | 'zoomIn' | 'zoomOut'
 // }
@@ -119,8 +119,7 @@ export function setupPointer(canvas, h) {
     // A short pause between steps keeps one trackpad swipe from racing
     // through dozens of levels.
     if (Math.abs(wheelAcc) < 50 || e.timeStamp - wheelStep < 120) return;
-    const { x, y } = pos(e);
-    h.zoom(wheelAcc < 0 ? 1 : -1, x, y);
+    h.zoom(wheelAcc < 0 ? 1 : -1);
     wheelAcc = 0;
     wheelStep = e.timeStamp;
   }, { passive: false });

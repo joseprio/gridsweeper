@@ -341,7 +341,7 @@ setupPointer(canvas, {
   hover: (i) => { if (ui.hover !== i) { ui.hover = i; dirty = true; } },
   pressed: (i) => { if (ui.pressed !== i) { ui.pressed = i; dirty = true; } },
   pan: (dx, dy) => { if (renderer.panBy(dx, dy)) dirty = true; },
-  zoom: (dir, x, y) => zoomLook(dir, x, y),
+  zoom: zoomLook,
   usedPointer: () => { sound.unlock(); if (ui.showCursor) { ui.showCursor = false; dirty = true; } },
 });
 
@@ -436,18 +436,15 @@ let zoomE = null; // zoom-out progress (0..1) while zooming, else null
 
 // Zooming in on earlier levels: the +/- buttons, keys and mouse wheel zoom by
 // whole levels (x3 each), down to level 1 filling the view. `z` counts levels
-// in from the one being played and eases towards `target`; `anchor` is the
-// screen point that stays put (the pointer for the wheel, else the middle).
-const look = { z: 0, target: 0, from: 0, t0: 0, anchor: { x: 0, y: 0 } };
+// in from the one being played and eases towards `target`.
+const look = { z: 0, target: 0, from: 0, t0: 0 };
 const canLook = () => !!game && !anim && !currentOverlay();
 
-function zoomLook(dir, x, y) {
+function zoomLook(dir) {
   if (!canLook()) return;
   const target = Math.max(0, Math.min(game.index, look.target + dir));
   if (target === look.target) return;
-  const A = renderer.area;
-  const anchor = x === undefined ? { x: 0, y: 0 } : { x: x - (A.x + A.w / 2), y: y - (A.y + A.h / 2) };
-  Object.assign(look, { target, from: look.z, t0: performance.now(), anchor });
+  Object.assign(look, { target, from: look.z, t0: performance.now() });
   if (target > 0) toast(`Level ${game.index + 1 - target}`, 1100);
   dirty = true;
 }
@@ -460,7 +457,8 @@ function resetLook() {
   renderer.panBy(0, 0);
 }
 
-// Moves the zoom one frame along, scaling the pan around the anchor.
+// Moves the zoom one frame along; the pan scales with it, so the zoom
+// centres on the middle of the screen.
 function stepLook(now) {
   if (look.z === look.target) return;
   const t = Math.min(1, (now - look.t0) / LOOK_MS);
@@ -468,8 +466,7 @@ function stepLook(now) {
   const k = 3 ** (z - look.z);
   look.z = z;
   renderer.zoom = 3 ** z;
-  const a = look.anchor;
-  renderer.pan = { x: (renderer.pan.x - a.x) * k + a.x, y: (renderer.pan.y - a.y) * k + a.y };
+  renderer.pan = { x: renderer.pan.x * k, y: renderer.pan.y * k };
   renderer.panBy(0, 0);
   dirty = true;
 }
