@@ -4,8 +4,9 @@
 // h (handlers): {
 //   hit(x, y) -> cell id or -1, canPlay() -> bool, overlay() -> open overlay element or null,
 //   tap(g), long(g), flag(g), chord(g), hover(g), pressed(g), pan(dx, dy),
+//   zoom(dir, x, y),
 //   move(dr, dc), cursorPrimary(), cursorFlag(), usedPointer(), usedKeys(),
-//   command(name)  // 'retry' | 'menu' | 'help' | 'flagMode' | 'back' | 'center'
+//   command(name)  // 'retry' | 'menu' | 'help' | 'flagMode' | 'back' | 'center' | 'zoomIn' | 'zoomOut'
 // }
 
 const LONG_PRESS_MS = 380;
@@ -100,11 +101,28 @@ export function setupPointer(canvas, h) {
     if (e.pointerType !== 'touch') h.hover(-1);
   });
 
-  // Wheel / trackpad scroll pans the board when it doesn't fit.
+  // The wheel (or a vertical trackpad scroll / pinch) zooms, one level per
+  // notch; trackpads send many small deltas, so they're added up first.
+  // Horizontal scrolling, or Shift+wheel, pans the board.
+  let wheelAcc = 0, wheelAt = 0, wheelStep = 0;
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
-    const [dx, dy] = e.shiftKey && !e.deltaX ? [e.deltaY, 0] : [e.deltaX, e.deltaY];
-    h.pan(-dx, -dy);
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      const [dx, dy] = e.shiftKey && !e.deltaX ? [e.deltaY, 0] : [e.deltaX, e.deltaY];
+      h.pan(-dx, -dy);
+      return;
+    }
+    const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1; // lines / pages -> pixels
+    if (e.timeStamp - wheelAt > 250) wheelAcc = 0;
+    wheelAt = e.timeStamp;
+    wheelAcc += e.deltaY * unit;
+    // A short pause between steps keeps one trackpad swipe from racing
+    // through dozens of levels.
+    if (Math.abs(wheelAcc) < 50 || e.timeStamp - wheelStep < 120) return;
+    const { x, y } = pos(e);
+    h.zoom(wheelAcc < 0 ? 1 : -1, x, y);
+    wheelAcc = 0;
+    wheelStep = e.timeStamp;
   }, { passive: false });
 }
 

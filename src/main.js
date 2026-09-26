@@ -10,7 +10,7 @@ const BEST_KEY = 'gridsweeper.best';
 const PREFS_KEY = 'gridsweeper.prefs';
 const CELEBRATE_MS = 700;
 const ZOOM_MS = 1300;
-const LOOK_MS = 450; // one zoom step while looking over a lost game
+const LOOK_MS = 450; // one zoom step in on earlier levels, or back out
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('board');
@@ -341,6 +341,7 @@ setupPointer(canvas, {
   hover: (i) => { if (ui.hover !== i) { ui.hover = i; dirty = true; } },
   pressed: (i) => { if (ui.pressed !== i) { ui.pressed = i; dirty = true; } },
   pan: (dx, dy) => { if (renderer.panBy(dx, dy)) dirty = true; },
+  zoom: (dir, x, y) => zoomLook(dir, x, y),
   usedPointer: () => { sound.unlock(); if (ui.showCursor) { ui.showCursor = false; dirty = true; } },
 });
 
@@ -433,16 +434,20 @@ let shownTime = '';
 
 let zoomE = null; // zoom-out progress (0..1) while zooming, else null
 
-// Looking over a lost game: the +/- buttons zoom in by whole levels (x3 each),
-// down to level 1 filling the view. `z` eases towards `target`.
-const look = { z: 0, target: 0, from: 0, t0: 0 };
-const canLook = () => !!game && game.status === 'lost' && !anim && !currentOverlay();
+// Zooming in on earlier levels: the +/- buttons, keys and mouse wheel zoom by
+// whole levels (x3 each), down to level 1 filling the view. `z` counts levels
+// in from the one being played and eases towards `target`; `anchor` is the
+// screen point that stays put (the pointer for the wheel, else the middle).
+const look = { z: 0, target: 0, from: 0, t0: 0, anchor: { x: 0, y: 0 } };
+const canLook = () => !!game && !anim && !currentOverlay();
 
-function zoomLook(dir) {
+function zoomLook(dir, x, y) {
   if (!canLook()) return;
   const target = Math.max(0, Math.min(game.index, look.target + dir));
   if (target === look.target) return;
-  Object.assign(look, { target, from: look.z, t0: performance.now() });
+  const A = renderer.area;
+  const anchor = x === undefined ? { x: 0, y: 0 } : { x: x - (A.x + A.w / 2), y: y - (A.y + A.h / 2) };
+  Object.assign(look, { target, from: look.z, t0: performance.now(), anchor });
   if (target > 0) toast(`Level ${game.index + 1 - target}`, 1100);
   dirty = true;
 }
@@ -455,8 +460,7 @@ function resetLook() {
   renderer.panBy(0, 0);
 }
 
-// Moves the zoom one frame along; the pan scales with it, so the zoom
-// centres on the middle of the screen.
+// Moves the zoom one frame along, scaling the pan around the anchor.
 function stepLook(now) {
   if (look.z === look.target) return;
   const t = Math.min(1, (now - look.t0) / LOOK_MS);
@@ -464,20 +468,21 @@ function stepLook(now) {
   const k = 3 ** (z - look.z);
   look.z = z;
   renderer.zoom = 3 ** z;
-  renderer.pan = { x: renderer.pan.x * k, y: renderer.pan.y * k };
+  const a = look.anchor;
+  renderer.pan = { x: (renderer.pan.x - a.x) * k + a.x, y: (renderer.pan.y - a.y) * k + a.y };
   renderer.panBy(0, 0);
   dirty = true;
 }
 
 let shownZoom = '';
 function updateZoomButtons() {
-  const on = canLook() && game.index > 0;
-  const key = on ? `${look.target}|${game.index}` : '';
+  const on = !!game && !currentOverlay() && game.index > 0;
+  const key = on ? `${look.target}|${game.index}|${!!anim}` : '';
   if (key === shownZoom) return;
   shownZoom = key;
   $('zoom').hidden = !on;
-  $('zoom-in').disabled = look.target >= game.index;
-  $('zoom-out').disabled = look.target <= 0;
+  $('zoom-in').disabled = !!anim || look.target >= game.index;
+  $('zoom-out').disabled = !!anim || look.target <= 0;
 }
 
 // What the camera shows: the level being played, or, while zooming out, the
@@ -486,7 +491,7 @@ function currentView() {
   if (zoomE === null) return { top: game.index, cell: renderer.cell * renderer.zoom, e: 0, zooming: false };
   // Mid-zoom the game is already on the new level; its cells shrink from 3x
   // down to normal size as the previous level settles into the core.
-  return { top: game.index, cell: renderer.cell * 3 ** (1 - zoomE), e: zoomE, zooming: true };
+  return { top: game.index, cell: renderer.cell * renderer.zoom * 3 ** (1 - zoomE), e: zoomE, zooming: true };
 }
 
 function frame() {

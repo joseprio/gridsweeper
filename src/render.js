@@ -59,7 +59,7 @@ export class Renderer {
     this.sprites = new Map(); // tile images per kind and pixel size, see sprite()
     this.vig = null; // cached darkening of locked cells and screen edges, see shade()
     this.pan = { x: 0, y: 0 };
-    this.zoom = 1; // extra magnification while looking over a lost game
+    this.zoom = 1; // extra magnification, to look in on earlier levels
     this.insets = { left: 0, top: 0, right: 0, bottom: 0 };
     this.area = { x: 0, y: 0, w: 0, h: 0 };
   }
@@ -120,7 +120,7 @@ export class Renderer {
   // Screen position -> global cell id (current level, the ring around it, or a
   // solved cell of the level below, for chording), or -1.
   hit(px, py, game) {
-    const c = this.cell;
+    const c = this.cell * this.zoom;
     const u = (px - (this.cx - 4.5 * c)) / c;
     const v = (py - (this.cy - 4.5 * c)) / c;
     return this.cellAtUnits(u, v, game.index, true);
@@ -150,7 +150,7 @@ export class Renderer {
 
   cellRect(g, game) {
     const [l, i] = split(g);
-    return this.rectOf(l, i, { top: game.index, cell: this.cell });
+    return this.rectOf(l, i, { top: game.index, cell: this.cell * this.zoom });
   }
 
   // view: { top, cell, e }: `top` is the level whose grid is centred with
@@ -165,7 +165,7 @@ export class Renderer {
     ctx.fillRect(0, 0, this.w, this.h);
 
     const outerCell = view.cell * 9;
-    this.drawLevel(game, view.top + 2, this.cx - 4.5 * outerCell, this.cy - 4.5 * outerCell, outerCell, view, ui);
+    this.drawLevel(game, view.top + 2, outerCell, view, ui);
     this.shade(view);
     if (view.zooming || game.status !== 'playing') return;
 
@@ -263,10 +263,14 @@ export class Renderer {
 
 
 
-  drawLevel(game, level, x0, y0, cell, view, ui) {
+  // Levels are concentric, so each one's corner is worked out from the board
+  // centre rather than from the level around it: zoomed far in, the outer
+  // levels are so big that adding up offsets from them loses all precision.
+  drawLevel(game, level, cell, view, ui) {
     if (level < 0) return;
-    const { ctx } = this;
+    const { ctx, cx, cy } = this;
     const span = cell * SIZE;
+    const x0 = cx - span / 2, y0 = cy - span / 2;
     if (x0 > this.w || y0 > this.h || x0 + span < 0 || y0 + span < 0) return;
 
     if (cell < 0.5) {
@@ -277,22 +281,27 @@ export class Renderer {
       return;
     }
 
-    for (let i = 0; i < CELLS; i++) {
-      if (isCore(level, i)) continue;
-      const x = x0 + (i % SIZE) * cell, y = y0 + Math.floor(i / SIZE) * cell;
-      if (x > this.w || y > this.h || x + cell < 0 || y + cell < 0) continue;
-      this.drawCell(game, level, i, x, y, cell, ui);
+    // When the core (3x3 cells round the centre) covers the whole screen, none
+    // of this level's own cells are visible.
+    const half = cell * 1.5;
+    const covered = level > 0 && cx - half < 0 && cy - half < 0 && cx + half > this.w && cy + half > this.h;
+    if (!covered) {
+      for (let i = 0; i < CELLS; i++) {
+        if (isCore(level, i)) continue;
+        const x = x0 + (i % SIZE) * cell, y = y0 + Math.floor(i / SIZE) * cell;
+        if (x > this.w || y > this.h || x + cell < 0 || y + cell < 0) continue;
+        this.drawCell(game, level, i, x, y, cell, ui);
+      }
     }
 
     if (level > 0) {
-      const cx = x0 + CORE_LO * cell, cy = y0 + CORE_LO * cell;
-      // Zoomed in, outer levels' cores can be far bigger than the screen, so
-      // only fill the part of the backing that is on it.
-      const bx0 = Math.max(-1, cx + cell * 0.04), by0 = Math.max(-1, cy + cell * 0.04);
-      const bx1 = Math.min(this.w + 1, cx + cell * 2.96), by1 = Math.min(this.h + 1, cy + cell * 2.96);
+      // The core's backing, only the part of it on screen (it can be huge).
+      const inset = cell * 0.04;
+      const bx0 = Math.max(-1, cx - half + inset), by0 = Math.max(-1, cy - half + inset);
+      const bx1 = Math.min(this.w + 1, cx + half - inset), by1 = Math.min(this.h + 1, cy + half - inset);
       ctx.fillStyle = C.gridBg;
       if (bx1 > bx0 && by1 > by0) ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
-      this.drawLevel(game, level - 1, cx, cy, cell / 3, view, ui);
+      this.drawLevel(game, level - 1, cell / 3, view, ui);
     }
   }
 
